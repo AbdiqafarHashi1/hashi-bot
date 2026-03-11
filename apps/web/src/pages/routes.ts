@@ -2,22 +2,22 @@ import { createWebContainer } from '../lib/container.js';
 
 const { pagesService } = createWebContainer();
 
-export function getOverviewPageRoute() {
+export async function getOverviewPageRoute() {
   return pagesService.getOverviewPage();
 }
 
-export function getReplayPageRoute() {
+export async function getReplayPageRoute() {
   return pagesService.getReplayPage();
 }
 
-export function getBacktestPageRoute() {
+export async function getBacktestPageRoute() {
   return pagesService.getBacktestPage();
 }
 
-export function getLivePageRoute() {
+export async function getLivePageRoute() {
   return pagesService.getLivePage();
 }
 
-export function getSettingsPageRoute() {
+export async function getSettingsPageRoute() {
   return pagesService.getSettingsPage();
 }

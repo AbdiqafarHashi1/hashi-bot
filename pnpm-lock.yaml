@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.37
       turbo:
         specifier: ^2.1.3
         version: 2.8.15
@@ -26,9 +29,15 @@ importers:
       '@hashi-bot/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@hashi-bot/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@hashi-bot/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
+      '@hashi-bot/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
 
   apps/worker:
     dependencies:
@@ -41,9 +50,18 @@ importers:
       '@hashi-bot/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@hashi-bot/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
+      '@hashi-bot/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@hashi-bot/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
+      '@hashi-bot/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
 
   packages/backtest:
     dependencies:
@@ -69,6 +87,12 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/execution:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/indicators:
     dependencies:
       '@hashi-bot/core':
@@ -90,6 +114,12 @@ importers:
         specifier: workspace:*
         version: link:../market
 
+  packages/storage:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/strategy:
     dependencies:
       '@hashi-bot/core':
@@ -102,7 +132,22 @@ importers:
         specifier: workspace:*
         version: link:../market
 
+  packages/telemetry:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hashi-bot/execution':
+        specifier: workspace:*
+        version: link:../execution
+      '@hashi-bot/storage':
+        specifier: workspace:*
+        version: link:../storage
+
 packages:
+
+  '@types/node@20.19.37':
+    resolution: {integrity: sha512-8kzdPJ3FsNsVIurqBs7oodNnCEVbni9yUEkaHbgptDACOPW04jimGagZ51E6+lXUwJjgnBw+hyko/lkFWCldqw==}
 
   turbo-darwin-64@2.8.15:
     resolution: {integrity: sha512-EElCh+Ltxex9lXYrouV3hHjKP3HFP31G91KMghpNHR/V99CkFudRcHcnWaorPbzAZizH1m8o2JkLL8rptgb8WQ==}
@@ -143,10 +188,17 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  '@types/node@20.19.37':
+    dependencies:
+      undici-types: 6.21.0
 
   turbo-darwin-64@2.8.15:
     optional: true
@@ -176,5 +228,7 @@ snapshots:
       turbo-windows-arm64: 2.8.15
 
   typescript@5.9.3: {}
+
+  undici-types@6.21.0: {}
 
   zod@3.25.76: {}

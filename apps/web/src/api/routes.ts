@@ -1,9 +1,9 @@
 import type { InstantBacktestRequest, ReplayControlAction } from '@hashi-bot/backtest';
-import type { ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
+import type { EmergencyCommand, ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
 
 import { createWebContainer } from '../lib/container.js';
 
-const { queryService, instantBacktestService, replayApiService } = createWebContainer();
+const { queryService, instantBacktestService, replayApiService, liveOperationsService } = createWebContainer();
 
 export function getHealthRoute() {
   return queryService.getHealth();
@@ -71,4 +71,24 @@ export function getReplayByIdRoute(runId: string) {
 
 export function controlReplayRoute(runId: string, action: ReplayControlAction) {
   return replayApiService.controlRun(runId, action);
+}
+
+export async function getLiveRoute() {
+  return liveOperationsService.getLiveSummary();
+}
+
+export async function getLiveHealthRoute() {
+  return liveOperationsService.getLiveHealth();
+}
+
+export async function getLiveSafetyRoute() {
+  return liveOperationsService.getLiveSafety();
+}
+
+export async function getLiveIncidentsRoute() {
+  return liveOperationsService.getLiveIncidents();
+}
+
+export async function postLiveEmergencyRoute(command: EmergencyCommand) {
+  return liveOperationsService.postEmergency(command);
 }

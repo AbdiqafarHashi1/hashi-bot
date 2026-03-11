@@ -1,0 +1,27 @@
+{
+  "name": "@hashi-bot/telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -b",
+    "lint": "echo 'No lint configured for @hashi-bot/telemetry yet'"
+  },
+  "dependencies": {
+    "@hashi-bot/core": "workspace:*",
+    "@hashi-bot/execution": "workspace:*",
+    "@hashi-bot/storage": "workspace:*"
+  }
+}

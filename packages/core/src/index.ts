@@ -11,6 +11,7 @@ export * from './enums/trade-side.js';
 export * from './types/candle.js';
 export * from './types/common.js';
 export * from './types/market-snapshot.js';
+export * from './types/operational-safety.js';
 export * from './types/risk-decision.js';
 export * from './types/run-config.js';
 export * from './types/strategy-signal.js';

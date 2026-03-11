@@ -12,9 +12,12 @@
     "lint": "echo 'No lint configured for @hashi-bot/worker yet'"
   },
   "dependencies": {
+    "@hashi-bot/backtest": "workspace:*",
     "@hashi-bot/core": "workspace:*",
-    "@hashi-bot/strategy": "workspace:*",
     "@hashi-bot/data": "workspace:*",
-    "@hashi-bot/backtest": "workspace:*"
+    "@hashi-bot/execution": "workspace:*",
+    "@hashi-bot/storage": "workspace:*",
+    "@hashi-bot/strategy": "workspace:*",
+    "@hashi-bot/telemetry": "workspace:*"
   }
 }

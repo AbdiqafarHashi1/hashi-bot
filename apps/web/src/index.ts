@@ -1,4 +1,5 @@
 import type { InstantBacktestRequest, ReplayControlAction } from '@hashi-bot/backtest';
+import type { EmergencyCommand } from '@hashi-bot/core';
 
 import {
   controlReplayRoute,
@@ -10,12 +11,17 @@ import {
   getConfigRoute,
   getDatasetsRoute,
   getHealthRoute,
+  getLiveHealthRoute,
+  getLiveIncidentsRoute,
+  getLiveRoute,
+  getLiveSafetyRoute,
   getRegimeRoute,
   getReplayByIdRoute,
   getReplayRunsRoute,
   getSignalsRoute,
   getSnapshotsRoute,
   getSymbolsRoute,
+  postLiveEmergencyRoute,
 } from './api/routes.js';
 import {
   getBacktestPageRoute,
@@ -25,7 +31,7 @@ import {
   getSettingsPageRoute,
 } from './pages/routes.js';
 
-export function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) {
+export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) {
   if (path.startsWith('/api/backtests/')) {
     const runId = path.replace('/api/backtests/', '');
     return getBacktestByIdRoute(runId);
@@ -49,6 +55,10 @@ export function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET',
     return getReplayByIdRoute(runId);
   }
 
+  if (path === '/api/live/emergency' && method === 'POST') {
+    return postLiveEmergencyRoute((body ?? {}) as EmergencyCommand);
+  }
+
   switch (path) {
     case '/api/health':
       return getHealthRoute();
@@ -70,12 +80,20 @@ export function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET',
       return getSignalsRoute();
     case '/api/replay':
       return getReplayRunsRoute();
+    case '/api/live':
+      return getLiveRoute();
+    case '/api/live/health':
+      return getLiveHealthRoute();
+    case '/api/live/incidents':
+      return getLiveIncidentsRoute();
+    case '/api/live/safety':
+      return getLiveSafetyRoute();
     default:
       return { error: 'not_found', path };
   }
 }
 
-export function getPagePayload(path: string) {
+export async function getPagePayload(path: string) {
   switch (path) {
     case '/':
       return getOverviewPageRoute();

@@ -14,6 +14,7 @@ import type { FoundationPage, PlatformSummary } from '../pages/page-types.js';
 import { InstantBacktestService } from './instant-backtest.service.js';
 import { Phase2QueryService } from './phase2-query.service.js';
 import { ReplayApiService } from './replay-api.service.js';
+import { LiveOperationsService } from './live-operations.service.js';
 
 const KNOWN_SETUPS = ['pullback:trend_pullback', 'pullback:pullback_v2', 'breakout:compression_breakout'] as const;
 
@@ -21,7 +22,8 @@ export class FoundationPagesService {
   constructor(
     private readonly queryService: Phase2QueryService,
     private readonly instantBacktestService: InstantBacktestService,
-    private readonly replayApiService: ReplayApiService
+    private readonly replayApiService: ReplayApiService,
+    private readonly liveOperationsService: LiveOperationsService
   ) {}
 
   private getPlatformSummary(): PlatformSummary {
@@ -78,7 +80,7 @@ export class FoundationPagesService {
     };
   }
 
-  getOverviewPage(): FoundationPage {
+  async getOverviewPage(): Promise<FoundationPage> {
     const config = this.queryService.getConfig();
     const signals = this.buildSignalSummary();
     const latestBacktest = this.getLatestBacktestDetail();
@@ -88,9 +90,9 @@ export class FoundationPagesService {
 
     return {
       path: '/',
-      title: 'Hashi Bot Phase 5 Control Center',
-      subtitle: 'Replay and instant backtest are now operable from API-backed flows with inspectable run history.',
-      readiness: 'phase5_ready',
+      title: 'Hashi Bot Operational Safety Control Center',
+      subtitle: 'Replay/backtest plus guarded live operational safety visibility with persisted incidents and recovery state.',
+      readiness: 'phase7_ready',
       sections: [
         createSection('availability', 'Capability Availability', 'Current mode availability and latest run counts.', {
           replay: {
@@ -121,7 +123,7 @@ export class FoundationPagesService {
       path: '/replay',
       title: 'Replay Inspection and Control',
       subtitle: 'Create/load replay runs, inspect cursor/state, and issue deterministic control actions via API.',
-      readiness: 'phase5_ready',
+      readiness: 'phase7_ready',
       sections: [
         createSection('create_load', 'Create / Load Replay Run', 'Use POST /api/replay to create runs and GET /api/replay/[id] to load details.', {
           createEndpoint: '/api/replay',
@@ -165,7 +167,7 @@ export class FoundationPagesService {
       path: '/backtest',
       title: 'Instant Backtest Launch and Inspection',
       subtitle: 'Launch structured instant backtests and inspect stored run summaries, metrics, and trade-level outputs.',
-      readiness: 'phase5_ready',
+      readiness: 'phase7_ready',
       sections: [
         createSection('launch', 'Launch Instant Backtest', 'POST /api/backtests launches a run and returns a real run reference.', {
           endpoint: '/api/backtests',
@@ -188,34 +190,44 @@ export class FoundationPagesService {
     };
   }
 
-  getLivePage(): FoundationPage {
+  async getLivePage(): Promise<FoundationPage> {
+    const liveSummary = await this.liveOperationsService.getLiveSummary();
+    const liveHealth = await this.liveOperationsService.getLiveHealth();
+    const liveSafety = await this.liveOperationsService.getLiveSafety();
+    const liveIncidents = await this.liveOperationsService.getLiveIncidents();
+
     return {
       path: '/live',
-      title: 'Live Execution Boundary (Phase 6+)',
-      subtitle: 'Replay/backtest are deterministic simulation flows; live execution remains intentionally deferred.',
-      readiness: 'phase5_ready',
+      title: 'Live Operational Safety (Phase 7)',
+      subtitle: 'Operational safety, recovery, lockouts, and incident visibility for guarded live execution.',
+      readiness: 'phase7_ready',
       sections: [
-        createSection('comparison', 'Replay vs Backtest vs Future Live', 'Current phase boundaries and intended coexistence.', {
-          replay: 'interactive deterministic stepping/controls over historical candles',
-          backtest: 'batch deterministic simulation with stored run results',
-          liveFuture: 'real exchange connectivity, order routing, and venue adapters in later phase',
+        createSection('health_summary', 'Health Summary', 'Current persisted live health and safety posture from worker operational state.', liveHealth),
+        createSection('safety_state', 'Kill-Switch / Lockout / Recovery', 'Lockout boundaries and recovery status used to guard live execution.', liveSafety),
+        createSection('watchdog_sync', 'Sync Freshness and Watchdog Context', 'Latest observed state and persisted recovery notes; unavailable means worker has not published live state yet.', {
+          status: liveSummary.status,
+          observedAt: liveSummary.latestState?.observedAt,
+          mode: liveSummary.mode,
+          recovery: liveSummary.recovery,
+          recoveryNotes: liveSummary.latestState?.recoveryNotes ?? []
         }),
-        createSection('shared_stack', 'Shared Strategy/Risk/Simulation Stack', 'Replay and backtest both reuse the same core decision/simulation modules.', {
-          strategy: true,
-          risk: true,
-          lifecycle: true,
-          deterministicFills: true,
+        createSection('incidents', 'Recent Incidents', 'Most recent incidents and emergency action history from persisted operational repository.', liveIncidents),
+        createSection('emergency_controls', 'Emergency Control Endpoint Visibility', 'POST /api/live/emergency is exposed for visibility but may reject execution when unavailable in this architecture.', {
+          endpoint: '/api/live/emergency',
+          method: 'POST',
+          supportedTypes: ['cancel_all_orders', 'flatten_positions', 'disable_live_mode'],
+          currentBehavior: 'visibility_only_or_rejected_without_worker_operator_channel'
         }),
       ],
     };
   }
 
-  getSettingsPage(): FoundationPage {
+  async getSettingsPage(): Promise<FoundationPage> {
     return {
       path: '/settings',
       title: 'Settings, Profiles, and Operational Notes',
       subtitle: 'Configuration visibility for profiles, symbols, and replay/backtest operating defaults.',
-      readiness: 'phase5_ready',
+      readiness: 'phase7_ready',
       sections: [
         createSection('profiles', 'Profiles', 'Profiles used by risk/governance and run launch payloads.', this.getPlatformSummary().profiles),
         createSection('symbols', 'Symbol Registry', 'Symbol metadata used for risk sizing and session constraints.', this.queryService.getSymbols()),
@@ -235,6 +247,12 @@ export class FoundationPagesService {
           launchEndpoint: '/api/backtests',
           detailEndpointTemplate: '/api/backtests/{runId}',
           defaults: this.queryService.getBacktestConfigs(),
+        }),
+        createSection('live_safety_notes', 'Live Safety Rails', 'Safety preconditions checked before live mode is allowed.', {
+          requiredFlags: ['LIVE_ENGINE_ENABLED=true', 'EXECUTION_VENUE set explicitly'],
+          ccxtRequirements: ['CCXT_API_KEY', 'CCXT_API_SECRET'],
+          ctraderRequirements: ['CTRADER_CLIENT_ID', 'CTRADER_CLIENT_SECRET', 'CTRADER_ACCESS_TOKEN', 'CTRADER_ACCOUNT_ID'],
+          modeGuardrails: ['live+mock blocked unless explicitly allowed', 'startup recovery can force sync-only/manual-review/lock']
         }),
         createSection('regime_defaults', 'Regime Threshold Notes', 'Default regime thresholds for transparent strategy context.', DEFAULT_REGIME_THRESHOLDS),
       ],

@@ -17,6 +17,15 @@
     },
     {
       "path": "../../packages/strategy"
+    },
+    {
+      "path": "../../packages/execution"
+    },
+    {
+      "path": "../../packages/telemetry"
+    },
+    {
+      "path": "../../packages/storage"
     }
   ]
 }
