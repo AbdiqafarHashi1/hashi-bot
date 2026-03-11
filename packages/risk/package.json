@@ -1,5 +1,5 @@
 {
-  "name": "@hashi-bot/data",
+  "name": "@hashi-bot/risk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,11 +16,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -b",
-    "lint": "echo 'No lint configured for @hashi-bot/data yet'"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'No lint configured for @hashi-bot/risk yet'"
   },
   "dependencies": {
     "@hashi-bot/core": "workspace:*",
-    "@hashi-bot/backtest": "workspace:*"
+    "@hashi-bot/market": "workspace:*"
   }
 }

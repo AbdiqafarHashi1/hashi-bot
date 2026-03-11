@@ -1,21 +1,29 @@
 import {
+  getBacktestByIdRoute,
+  getBacktestConfigsRoute,
+  getBacktestsRoute,
   getConfigRoute,
   getDatasetsRoute,
   getHealthRoute,
   getRegimeRoute,
   getSignalsRoute,
   getSnapshotsRoute,
-  getSymbolsRoute,
+  getSymbolsRoute
 } from './api/routes.js';
 import {
   getBacktestPageRoute,
   getLivePageRoute,
   getOverviewPageRoute,
   getReplayPageRoute,
-  getSettingsPageRoute,
+  getSettingsPageRoute
 } from './pages/routes.js';
 
 export function getApiRoutePayload(path: string) {
+  if (path.startsWith('/api/backtests/')) {
+    const runId = path.replace('/api/backtests/', '');
+    return getBacktestByIdRoute(runId);
+  }
+
   switch (path) {
     case '/api/health':
       return getHealthRoute();
@@ -29,8 +37,10 @@ export function getApiRoutePayload(path: string) {
       return getSnapshotsRoute();
     case '/api/regime':
       return getRegimeRoute();
-    case '/api/signals':
-      return getSignalsRoute();
+    case '/api/backtests':
+      return getBacktestsRoute();
+    case '/api/backtests/configs':
+      return getBacktestConfigsRoute();
     default:
       return { error: 'not_found', path };
   }

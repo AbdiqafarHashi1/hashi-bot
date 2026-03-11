@@ -1,6 +1,7 @@
 import type { SymbolCode } from '@hashi-bot/core';
 
 import { bootstrapWorker } from './bootstrap.js';
+import { runBacktestLoop } from './loops/backtest.loop.js';
 import { runEvaluationLoop } from './loops/evaluation.loop.js';
 
 function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
@@ -20,16 +21,15 @@ function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
 function main(): void {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
   const datasetId = env.DATASET_ID;
-  const watchlist = parseWatchlist(env.WATCHLIST_SYMBOLS);
-  const rankingLimit = env.BATCH_RANKING_LIMIT == null ? undefined : Number(env.BATCH_RANKING_LIMIT);
-
+  const workerMode = env.WORKER_MODE ?? 'evaluation';
   const { container } = bootstrapWorker();
 
-  runEvaluationLoop(container, {
-    datasetId,
-    watchlistSymbolCodes: watchlist,
-    rankingLimit: Number.isFinite(rankingLimit ?? NaN) ? rankingLimit : undefined,
-  });
+  if (workerMode === 'backtest') {
+    runBacktestLoop(container, datasetId);
+    return;
+  }
+
+  runEvaluationLoop(container, datasetId);
 }
 
 main();

@@ -6,7 +6,7 @@ export interface FoundationPage<TSections extends readonly PageSection[] = reado
   path: string;
   title: string;
   subtitle: string;
-  readiness: 'foundation' | 'phase2_ready' | 'phase3_ready';
+  readiness: 'foundation' | 'phase2_ready' | 'phase4_ready';
   sections: TSections;
 }
 

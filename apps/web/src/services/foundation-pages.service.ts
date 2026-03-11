@@ -4,7 +4,7 @@ import {
   SUPPORTED_PROFILE_CODES,
   type BotMode,
   type ExecutionVenue,
-  type ProfileCode,
+  type ProfileCode
 } from '@hashi-bot/core';
 import {
   DEFAULT_BREAKOUT_THRESHOLDS,
@@ -30,7 +30,7 @@ export class FoundationPagesService {
     return {
       supportedModes: [...SUPPORTED_BOT_MODES] as BotMode[],
       executionVenues: [...SUPPORTED_EXECUTION_VENUES] as ExecutionVenue[],
-      profiles: [...SUPPORTED_PROFILE_CODES] as ProfileCode[],
+      profiles: [...SUPPORTED_PROFILE_CODES] as ProfileCode[]
     };
   }
 
@@ -67,35 +67,28 @@ export class FoundationPagesService {
   getOverviewPage(): FoundationPage {
     const symbols = this.queryService.getSymbols();
     const datasets = this.queryService.getDatasets();
-    const snapshots = this.queryService.getSnapshots();
-    const regimes = this.queryService.getRegimes();
-    const signalSummary = this.buildSignalSummary();
+    const backtests = this.queryService.getBacktestRuns();
     const platform = this.getPlatformSummary();
 
     return {
       path: '/',
-      title: 'Hashi Bot Phase 3 Overview',
-      subtitle: 'Snapshot + regime + setup/scoring/signal layers are exposed for inspection before Phase 4.',
-      readiness: 'phase3_ready',
+      title: 'Hashi Bot Phase 4 Overview',
+      subtitle: 'Signals, risk decisions, simulated execution, and backtest visibility are now wired end-to-end.',
+      readiness: 'phase4_ready',
       sections: [
-        createSection('symbols', 'Known Symbols', 'Symbol registry available to evaluation paths.', symbols),
-        createSection('datasets', 'Datasets', 'Datasets currently available for replay/backtest-style evaluation.', datasets),
-        createSection('snapshots', 'Latest Snapshots', 'Latest per-symbol indicator-enriched snapshots.', snapshots),
-        createSection('regime', 'Latest Regime Assessments', 'Current regime classification per dataset/symbol.', regimes),
-        createSection('setups', 'Known Setup Modules', 'Setup detectors currently orchestrated by strategy engine.', {
-          knownSetups: signalSummary.knownSetups,
-          setupCountsFromQualifiedSignals: signalSummary.setupCounts,
+        createSection('signals', 'Signal Generation', 'Strategy snapshot/regime inputs are producing structured signals for simulation.', this.queryService.getRegimes()),
+        createSection('risk', 'Risk + Governance Foundation', 'Profile-aware risk sizing and governance checks are active in backtest execution.', {
+          profiles: platform.profiles,
+          modeSupport: platform.supportedModes
         }),
-        createSection('signals', 'Latest Qualified Signals', 'Signal outputs from Phase 3 strategy evaluation.', {
-          symbolsEvaluated: this.queryService.getSignals().symbolsEvaluated,
-          qualifiedSignals: signalSummary.latestQualifiedSignals,
-          unqualifiedSummary: signalSummary.unqualifiedSummary,
+        createSection('execution', 'Simulated Trade Execution', 'Trade lifecycle state machine and fill assumptions are applied candle-by-candle.', {
+          lifecycle: 'pending_entry -> open -> tp1 -> breakeven/runner -> closed',
+          fillModel: 'OHLC touch-based deterministic fills with fee/slippage assumptions'
         }),
-        createSection('best_signal', 'Best Signal Summary', 'Top-ranked signal across current batch evaluation.', signalSummary.bestSignal),
-        createSection('modes', 'Supported Modes', 'Modes supported by architecture boundaries.', platform.supportedModes),
-        createSection('venues', 'Execution Venues', 'Configured execution venue contracts for later phases.', platform.executionVenues),
-        createSection('profiles', 'Supported Profiles', 'Strategy/risk profile codes available for orchestration.', platform.profiles),
-      ],
+        createSection('backtests', 'Backtest Visibility', 'Run summaries and metrics are queryable through API routes.', backtests),
+        createSection('datasets', 'Datasets', 'Available market datasets feeding backtest/replay inputs.', datasets),
+        createSection('symbols', 'Known Symbols', 'Symbol metadata used by sizing/risk simulation.', symbols)
+      ]
     };
   }
 
@@ -103,78 +96,76 @@ export class FoundationPagesService {
     return {
       path: '/replay',
       title: 'Replay Foundation',
-      subtitle: 'Replay architecture now has datasets + snapshots + regime + signal generation. Trade simulation remains deferred.',
-      readiness: 'phase3_ready',
+      subtitle: 'Replay will reuse the same strategy context, risk engine, lifecycle state machine, and fill assumptions.',
+      readiness: 'phase4_ready',
       sections: [
-        createSection('datasets', 'Replay Datasets', 'Dataset inputs available to replay loop shell.', this.queryService.getDatasets()),
-        createSection('snapshots', 'Replay Snapshots', 'Latest snapshots available through shared evaluation service.', this.queryService.getSnapshots()),
-        createSection('regime', 'Replay Regime State', 'Regime assessments available for replay setup decisions.', this.queryService.getRegimes()),
-        createSection('signals', 'Replay Signal Layer Access', 'Replay pipeline can now consume generated setup/signal outputs.', this.queryService.getSignals()),
-      ],
+        createSection('replay_reuse', 'Shared Engine Reuse', 'Replay path is expected to consume the same deterministic modules.', {
+          strategy: 'strategy snapshot + regime evaluation',
+          risk: 'profile-aware risk/governance decisions',
+          lifecycle: 'trade state machine transitions',
+          fills: 'OHLC + slippage/fee assumptions'
+        }),
+        createSection('datasets', 'Replay Datasets', 'Dataset inputs currently available for replay loop scaffolding.', this.queryService.getDatasets()),
+        createSection('regime', 'Replay Regime State', 'Regime context currently visible for replay decisioning.', this.queryService.getRegimes())
+      ]
     };
   }
 
   getBacktestPage(): FoundationPage {
+    const configs = this.queryService.getBacktestConfigs();
+    const runs = this.queryService.getBacktestRuns();
+    const latestRunId = runs.runs[0]?.runId;
+    const latestRun = latestRunId ? this.queryService.getBacktestRun(latestRunId) : { status: 'not_found' as const };
+    const latestTradeLog = latestRun.status === 'ok' && 'run' in latestRun ? latestRun.run.tradeLogSummary : [];
+
     return {
       path: '/backtest',
-      title: 'Backtest Foundation',
-      subtitle: 'Instant backtest architecture now includes signal generation inputs; full execution simulation remains deferred.',
-      readiness: 'phase3_ready',
+      title: 'Backtest Execution',
+      subtitle: 'Phase 4 backtest path now exposes datasets, profile options, run summaries, metrics, and trade-level visibility.',
+      readiness: 'phase4_ready',
       sections: [
-        createSection('datasets', 'Backtest Datasets', 'Data sources available for instant backtest ingestion.', this.queryService.getDatasets()),
-        createSection('snapshots', 'Backtest Snapshots', 'Indicator snapshots computed via shared strategy package.', this.queryService.getSnapshots()),
-        createSection('regime', 'Backtest Regime Context', 'Rule-based regimes available for setup filtering.', this.queryService.getRegimes()),
-        createSection('signals', 'Backtest Signal Generation', 'Backtest layer has access to strategy signal outputs for future execution harnesses.', this.queryService.getSignals()),
-      ],
+        createSection('configs', 'Available Backtest Configs', 'Datasets + profile defaults currently surfaced by API.', configs),
+        createSection('run_summaries', 'Run Summaries', 'Stored backtest run summaries for quick inspection.', runs),
+        createSection('metrics', 'Latest Run Metrics', 'Structured metrics summary from latest stored run.', latestRun),
+        createSection('trades', 'Trade Log Summary', 'Trade-level visibility from latest run output.', latestTradeLog)
+      ]
     };
   }
 
   getLivePage(): FoundationPage {
-    const config = this.queryService.getConfig();
-
     return {
       path: '/live',
-      title: 'Live Architecture Preview',
-      subtitle: 'Future live decisioning will consume snapshots + regime + signals; order execution remains out of scope.',
-      readiness: 'phase3_ready',
+      title: 'Live Architecture Boundary',
+      subtitle: 'Backtest execution is simulated-only. Real exchange execution remains separated for future phases.',
+      readiness: 'phase4_ready',
       sections: [
-        createSection('separation', 'Web vs Worker Separation', 'Web exposes queries; worker handles evaluation loops.', {
-          web: 'API/query orchestration only',
-          worker: 'Evaluation shell for snapshot/regime/signal computation',
+        createSection('separation', 'Simulated vs Future Real Execution', 'Phase 4 keeps execution simulation and live execution concerns separate.', {
+          backtest: 'deterministic OHLC simulation with risk/governance controls',
+          liveFuture: 'real exchange adapters and order routing deferred to later phases'
         }),
-        createSection('venues', 'Execution Venues', 'Venue support is declared but execution logic is not implemented yet.', this.getPlatformSummary().executionVenues),
-        createSection('decisioning', 'Live Decisioning Inputs', 'Future live decisions will consume these shared outputs.', {
-          snapshots: this.queryService.getSnapshots(),
-          regime: this.queryService.getRegimes(),
-          signals: this.queryService.getSignals(),
-          config,
+        createSection('shared_stack', 'Shared Reusable Stack', 'Both replay/live will reuse strategy+risk+lifecycle contracts.', {
+          strategy: true,
+          risk: true,
+          lifecycle: true,
+          fillsAssumptions: true
         }),
-      ],
+        createSection('venues', 'Execution Venues', 'Venue contract declarations remain available without live trading implementation.', this.getPlatformSummary().executionVenues)
+      ]
     };
   }
 
   getSettingsPage(): FoundationPage {
     return {
       path: '/settings',
-      title: 'Settings and Defaults',
-      subtitle: 'Lightweight defaults surfaced for setup/scoring transparency ahead of Phase 4 execution and risk layers.',
-      readiness: 'phase3_ready',
+      title: 'Settings and Risk Notes',
+      subtitle: 'Phase 4 exposes profile/risk/config notes with lightweight operational visibility.',
+      readiness: 'phase4_ready',
       sections: [
-        createSection('config', 'Config Notes', 'Current capability configuration surfaced through API.', this.queryService.getConfig()),
-        createSection('symbols', 'Symbol Registry Summary', 'Symbol metadata currently available to evaluator and pages.', this.queryService.getSymbols()),
-        createSection('regime_defaults', 'Regime Threshold Notes', 'Default regime thresholds from strategy engine for transparency.', DEFAULT_REGIME_THRESHOLDS),
-        createSection('setup_defaults', 'Setup Threshold Notes', 'Default thresholds currently used by setup detectors.', {
-          trendPullback: DEFAULT_TREND_PULLBACK_THRESHOLDS,
-          pullbackV2: DEFAULT_PULLBACK_V2_THRESHOLDS,
-          breakout: DEFAULT_BREAKOUT_THRESHOLDS,
-        }),
-        createSection('scoring_defaults', 'Scoring Notes', 'Default scoring weights and qualification thresholds.', {
-          scoreWeights: DEFAULT_SCORE_WEIGHTS,
-          scoreThresholds: DEFAULT_SCORE_THRESHOLDS,
-          strategyEngineDefaults: DEFAULT_STRATEGY_ENGINE_CONFIG.defaults,
-        }),
-        createSection('profiles', 'Profile Summary', 'Available profile codes for future Phase 4 risk/execution wiring.', this.getPlatformSummary().profiles),
-      ],
+        createSection('config', 'Capability Config', 'Current capability switches surfaced through API.', this.queryService.getConfig()),
+        createSection('profiles', 'Profile Options', 'Profiles used for risk-governance decisions.', this.getPlatformSummary().profiles),
+        createSection('backtest_defaults', 'Backtest Defaults', 'Current defaults used by worker/web backtest execution paths.', this.queryService.getBacktestConfigs()),
+        createSection('regime_defaults', 'Regime Threshold Notes', 'Default regime thresholds for transparent strategy context.', DEFAULT_REGIME_THRESHOLDS)
+      ]
     };
   }
 }

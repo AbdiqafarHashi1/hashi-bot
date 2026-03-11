@@ -26,6 +26,14 @@ export function getRegimeRoute() {
   return queryService.getRegimes();
 }
 
-export function getSignalsRoute() {
-  return queryService.getSignals();
+export function getBacktestsRoute() {
+  return queryService.getBacktestRuns();
+}
+
+export function getBacktestConfigsRoute() {
+  return queryService.getBacktestConfigs();
+}
+
+export function getBacktestByIdRoute(runId: string) {
+  return queryService.getBacktestRun(runId);
 }
