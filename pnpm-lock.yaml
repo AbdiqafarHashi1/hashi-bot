@@ -17,6 +17,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@hashi-bot/backtest':
+        specifier: workspace:*
+        version: link:../../packages/backtest
       '@hashi-bot/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -29,6 +32,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@hashi-bot/backtest':
+        specifier: workspace:*
+        version: link:../../packages/backtest
       '@hashi-bot/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -39,6 +45,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/strategy
 
+  packages/backtest:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hashi-bot/risk':
+        specifier: workspace:*
+        version: link:../risk
+
   packages/core:
     dependencies:
       zod:
@@ -47,6 +62,9 @@ importers:
 
   packages/data:
     dependencies:
+      '@hashi-bot/backtest':
+        specifier: workspace:*
+        version: link:../backtest
       '@hashi-bot/core':
         specifier: workspace:*
         version: link:../core
@@ -62,6 +80,15 @@ importers:
       '@hashi-bot/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/risk:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hashi-bot/market':
+        specifier: workspace:*
+        version: link:../market
 
   packages/strategy:
     dependencies:

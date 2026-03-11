@@ -22,8 +22,12 @@ export interface ReplayRunConfig extends RunConfigBase {
 export interface BacktestRunConfig extends RunConfigBase {
   mode: 'backtest';
   datasetId: string;
+  fromTs?: number;
+  toTs?: number;
+  initialBalance?: number;
   slippageBps?: number;
   commissionBps?: number;
+  maxConcurrentPositions?: number;
 }
 
 export interface PaperRunConfig extends RunConfigBase {
