@@ -1,7 +1,7 @@
-import type { BacktestRunResult } from '@hashi-bot/backtest';
+import type { BacktestRunResult, RunDetailView } from '@hashi-bot/backtest';
 import { runBacktest } from '@hashi-bot/backtest';
 import type { RunId } from '@hashi-bot/core';
-import type { BacktestRunRepository, DatasetRepository } from '@hashi-bot/data';
+import type { BacktestRunRepository, DatasetRepository, RunHistoryRepository } from '@hashi-bot/data';
 
 import { BacktestSignalService } from './backtest-signal.service.js';
 
@@ -16,7 +16,8 @@ export class BacktestService {
   constructor(
     private readonly datasetRepository: DatasetRepository,
     private readonly backtestRunRepository: BacktestRunRepository,
-    private readonly backtestSignalService: BacktestSignalService
+    private readonly backtestSignalService: BacktestSignalService,
+    private readonly runHistoryRepository: RunHistoryRepository
   ) {}
 
   runBacktest(params: RunBacktestParams = {}): BacktestRunResult {
@@ -60,6 +61,59 @@ export class BacktestService {
     });
 
     this.backtestRunRepository.saveRun(result);
+
+    this.runHistoryRepository.saveRunSummary({
+      runId: result.metadata.runId,
+      mode: 'backtest',
+      status: 'completed',
+      profileCode: result.config.profileCode,
+      timeframe: result.config.timeframe,
+      symbols: result.config.symbols,
+      startedAtTs: result.metadata.startedAtTs,
+      completedAtTs: result.metadata.completedAtTs,
+      totalTrades: result.metrics.totalTrades,
+      winRatePct: result.metrics.winRatePct,
+      netPnl: result.metrics.netPnl,
+      maxDrawdownPct: result.metrics.maxDrawdownPct
+    });
+
+    const detail: RunDetailView = {
+      summary: {
+        runId: result.metadata.runId,
+        mode: 'backtest',
+        status: 'completed',
+        profileCode: result.config.profileCode,
+        timeframe: result.config.timeframe,
+        symbols: result.config.symbols,
+        startedAtTs: result.metadata.startedAtTs,
+        completedAtTs: result.metadata.completedAtTs,
+        totalTrades: result.metrics.totalTrades,
+        winRatePct: result.metrics.winRatePct,
+        netPnl: result.metrics.netPnl,
+        maxDrawdownPct: result.metrics.maxDrawdownPct
+      },
+      backtestConfig: result.config,
+      tradeSummaries: result.trades.map((trade) => ({
+        tradeId: trade.tradeId,
+        symbolCode: trade.symbolCode,
+        side: trade.side,
+        setupCode: trade.setupCode,
+        lifecycleState: trade.lifecycleState,
+        netPnl: trade.netPnl,
+        openedAtTs: trade.position.openedAtTs,
+        closedAtTs: trade.position.closedAtTs,
+        closeReason: trade.closeReason
+      })),
+      metrics: {
+        totalTrades: result.metrics.totalTrades,
+        winRatePct: result.metrics.winRatePct,
+        netPnl: result.metrics.netPnl,
+        maxDrawdownPct: result.metrics.maxDrawdownPct
+      },
+      timeline: []
+    };
+
+    this.runHistoryRepository.saveRunDetail(detail);
     return result;
   }
 

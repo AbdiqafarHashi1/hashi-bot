@@ -1,8 +1,26 @@
 import type { ProfileCode, SymbolSpec } from '@hashi-bot/core';
-import type { BacktestRunRepository, DatasetRecord, DatasetRepository } from '@hashi-bot/data';
 import { runBacktest, type BacktestRunResult } from '@hashi-bot/backtest';
-import { buildMarketSnapshot, buildPhase4SignalsFromCandles, classifyRegime } from '@hashi-bot/strategy';
+import type { BacktestRunRepository, DatasetRecord, DatasetRepository } from '@hashi-bot/data';
+import {
+  buildMarketSnapshot,
+  buildPhase4SignalsFromCandles,
+  classifyRegime,
+  evaluateStrategyBatch,
+  type MultiSymbolStrategyContext,
+  type StrategyContext,
+} from '@hashi-bot/strategy';
 
+export interface SnapshotRecord {
+  datasetId: string;
+  symbolCode: DatasetRecord['symbolCode'];
+  snapshot: ReturnType<typeof buildMarketSnapshot>;
+}
+
+export interface StrategyContextRecord {
+  datasetId: string;
+  symbolCode: DatasetRecord['symbolCode'];
+  context: StrategyContext;
+}
 
 export type BacktestRunDetailResponse =
   | {
@@ -43,13 +61,13 @@ export class Phase2QueryService {
       ok: true,
       service: 'web-api',
       phase: 'phase-4-backtest-visible',
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),
     };
   }
 
   getSymbols() {
     return {
-      symbols: this.datasetRepository.listSymbols()
+      symbols: this.datasetRepository.listSymbols(),
     };
   }
 
@@ -59,7 +77,7 @@ export class Phase2QueryService {
       name: dataset.name,
       symbolCode: dataset.symbolCode,
       timeframe: dataset.timeframe,
-      candleCount: dataset.candles.length
+      candleCount: dataset.candles.length,
     }));
 
     return { datasets };
@@ -72,15 +90,15 @@ export class Phase2QueryService {
         replay: true,
         backtest: true,
         paper: false,
-        live: false
+        live: false,
       },
       features: {
         snapshots: true,
         regime: true,
         riskDecisioning: true,
         lifecycleSimulation: true,
-        metrics: true
-      }
+        metrics: true,
+      },
     };
   }
 
@@ -91,7 +109,7 @@ export class Phase2QueryService {
       return {
         snapshots: [],
         status: 'no_datasets',
-        message: 'No datasets imported yet.'
+        message: 'No datasets imported yet.',
       };
     }
 
@@ -145,12 +163,13 @@ export class Phase2QueryService {
 
     const batch = evaluateStrategyBatch({ context: multiContext });
 
-    const qualifiedSignals = contexts.flatMap((item) =>
-      batch.batch.bySymbol[item.symbolCode]?.signals.map((signal) => ({
-        datasetId: item.datasetId,
-        symbolCode: item.symbolCode,
-        signal,
-      })) ?? []
+    const qualifiedSignals = contexts.flatMap(
+      (item) =>
+        batch.batch.bySymbol[item.symbolCode]?.signals.map((signal) => ({
+          datasetId: item.datasetId,
+          symbolCode: item.symbolCode,
+          signal,
+        })) ?? []
     );
 
     const unqualifiedBySymbol = Object.fromEntries(
@@ -184,7 +203,8 @@ export class Phase2QueryService {
   }
 
   private buildSnapshots(): SnapshotRecord[] {
-    return this.datasetRepository.listDatasets()
+    return this.datasetRepository
+      .listDatasets()
       .map((dataset) => {
         const symbolSpec = this.datasetRepository.getSymbol(dataset.symbolCode);
         if (!symbolSpec) {
@@ -194,49 +214,51 @@ export class Phase2QueryService {
         const snapshot = buildMarketSnapshot({
           candles: dataset.candles,
           symbolSpec,
-          timeframe: dataset.timeframe
+          timeframe: dataset.timeframe,
         });
 
         return {
           datasetId: dataset.id,
           symbolCode: dataset.symbolCode,
-          snapshot
+          snapshot,
         };
       })
-      .filter((item): item is NonNullable<typeof item> => item != null);
-
-    return {
-      snapshots,
-      status: 'ok'
-    };
+      .filter((item): item is SnapshotRecord => item != null);
   }
 
-  private buildStrategyContexts() {
-    return this.datasetRepository.listDatasets()
+  private buildStrategyContexts(): StrategyContextRecord[] {
+    return this.datasetRepository
+      .listDatasets()
       .map((dataset) => {
         const symbolSpec = this.datasetRepository.getSymbol(dataset.symbolCode);
         if (!symbolSpec) {
           return null;
         }
 
-    if (snapshotPayload.status !== 'ok') {
-      return {
-        regimes: [],
-        status: snapshotPayload.status,
-        message: snapshotPayload.message
-      };
-    }
+        const snapshot = buildMarketSnapshot({
+          candles: dataset.candles,
+          symbolSpec,
+          timeframe: dataset.timeframe,
+        });
 
-    const regimes = snapshotPayload.snapshots.map((item) => ({
-      datasetId: item.datasetId,
-      symbolCode: item.symbolCode,
-      regime: classifyRegime({ snapshot: item.snapshot })
-    }));
+        const regime = classifyRegime({ snapshot });
 
-    return {
-      regimes,
-      status: 'ok'
-    };
+        const context: StrategyContext = {
+          symbolCode: dataset.symbolCode,
+          timeframe: dataset.timeframe,
+          candles: dataset.candles,
+          symbolSpec,
+          snapshot,
+          regime,
+        };
+
+        return {
+          datasetId: dataset.id,
+          symbolCode: dataset.symbolCode,
+          context,
+        };
+      })
+      .filter((item): item is StrategyContextRecord => item != null);
   }
 
   getBacktestConfigs() {
@@ -249,8 +271,8 @@ export class Phase2QueryService {
         initialBalance: 10_000,
         slippageBps: 5,
         commissionBps: 4,
-        maxConcurrentPositions: 5
-      }
+        maxConcurrentPositions: 5,
+      },
     };
   }
 
@@ -259,7 +281,7 @@ export class Phase2QueryService {
 
     return {
       runs: this.backtestRunRepository.listRunSummaries(),
-      status: 'ok'
+      status: 'ok',
     };
   }
 
@@ -271,7 +293,7 @@ export class Phase2QueryService {
       return {
         status: 'not_found',
         runId,
-        message: `Backtest run ${runId} not found`
+        message: `Backtest run ${runId} not found`,
       };
     }
 
@@ -290,11 +312,11 @@ export class Phase2QueryService {
           netPnl: trade.netPnl,
           openedAtTs: trade.position.openedAtTs,
           closedAtTs: trade.position.closedAtTs,
-          closeReason: trade.closeReason
+          closeReason: trade.closeReason,
         })),
         equity: run.equity,
-        rejectedSignals: run.rejectedSignals?.length ?? 0
-      }
+        rejectedSignals: run.rejectedSignals?.length ?? 0,
+      },
     };
   }
 
@@ -334,14 +356,13 @@ export class Phase2QueryService {
         initialBalance: 10_000,
         slippageBps: 5,
         commissionBps: 4,
-        maxConcurrentPositions: 5
+        maxConcurrentPositions: 5,
       },
       dataset: { candlesBySymbol, symbolSpecsBySymbol },
       signalGenerator: ({ symbolCode, symbolSpec, candles }) =>
-        buildPhase4SignalsFromCandles({ symbolCode, symbolSpec, candles })
+        buildPhase4SignalsFromCandles({ symbolCode, symbolSpec, candles }),
     });
 
     this.backtestRunRepository.saveRun(result);
   }
-
 }
