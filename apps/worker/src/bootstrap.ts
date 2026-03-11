@@ -6,6 +6,6 @@ export interface WorkerBootstrapResult {
 
 export function bootstrapWorker(): WorkerBootstrapResult {
   const container = createWorkerContainer();
-  console.log('[worker] bootstrap complete');
+  console.log('[worker] bootstrap complete (evaluation + backtest services initialized)');
   return { container };
 }

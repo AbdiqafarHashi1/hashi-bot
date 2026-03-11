@@ -1,20 +1,26 @@
 {
-  "name": "@hashi-bot/web",
+  "name": "@hashi-bot/risk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "dev": "node --watch ./src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo 'No lint configured for @hashi-bot/web yet'"
+    "lint": "echo 'No lint configured for @hashi-bot/risk yet'"
   },
   "dependencies": {
     "@hashi-bot/core": "workspace:*",
-    "@hashi-bot/strategy": "workspace:*",
-    "@hashi-bot/data": "workspace:*",
-    "@hashi-bot/backtest": "workspace:*"
+    "@hashi-bot/market": "workspace:*"
   }
 }

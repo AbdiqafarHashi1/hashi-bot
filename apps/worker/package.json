@@ -14,6 +14,7 @@
   "dependencies": {
     "@hashi-bot/core": "workspace:*",
     "@hashi-bot/strategy": "workspace:*",
-    "@hashi-bot/data": "workspace:*"
+    "@hashi-bot/data": "workspace:*",
+    "@hashi-bot/backtest": "workspace:*"
   }
 }

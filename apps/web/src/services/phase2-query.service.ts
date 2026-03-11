@@ -1,21 +1,55 @@
-import type { DatasetRepository } from '@hashi-bot/data';
-import { buildMarketSnapshot, classifyRegime } from '@hashi-bot/strategy';
+import type { ProfileCode, SymbolSpec } from '@hashi-bot/core';
+import type { BacktestRunRepository, DatasetRecord, DatasetRepository } from '@hashi-bot/data';
+import { runBacktest, type BacktestRunResult } from '@hashi-bot/backtest';
+import { buildMarketSnapshot, buildPhase4SignalsFromCandles, classifyRegime } from '@hashi-bot/strategy';
+
+
+export type BacktestRunDetailResponse =
+  | {
+      status: 'ok';
+      run: {
+        metadata: BacktestRunResult['metadata'];
+        config: BacktestRunResult['config'];
+        metrics: BacktestRunResult['metrics'];
+        tradeLogSummary: Array<{
+          tradeId: string;
+          symbolCode: string;
+          side: string;
+          setupCode: string;
+          state: string;
+          netPnl: number | undefined;
+          openedAtTs: number | undefined;
+          closedAtTs: number | undefined;
+          closeReason: string | undefined;
+        }>;
+        equity: BacktestRunResult['equity'];
+        rejectedSignals: number;
+      };
+    }
+  | {
+      status: 'not_found';
+      runId: string;
+      message: string;
+    };
 
 export class Phase2QueryService {
-  constructor(private readonly datasetRepository: DatasetRepository) {}
+  constructor(
+    private readonly datasetRepository: DatasetRepository,
+    private readonly backtestRunRepository: BacktestRunRepository
+  ) {}
 
   getHealth() {
     return {
       ok: true,
       service: 'web-api',
-      phase: 'phase-2-foundation',
-      ts: new Date().toISOString(),
+      phase: 'phase-4-backtest-visible',
+      ts: new Date().toISOString()
     };
   }
 
   getSymbols() {
     return {
-      symbols: this.datasetRepository.listSymbols(),
+      symbols: this.datasetRepository.listSymbols()
     };
   }
 
@@ -25,7 +59,7 @@ export class Phase2QueryService {
       name: dataset.name,
       symbolCode: dataset.symbolCode,
       timeframe: dataset.timeframe,
-      candleCount: dataset.candles.length,
+      candleCount: dataset.candles.length
     }));
 
     return { datasets };
@@ -33,17 +67,20 @@ export class Phase2QueryService {
 
   getConfig() {
     return {
-      mode: 'foundation',
+      mode: 'phase4',
       supports: {
         replay: true,
         backtest: true,
         paper: false,
-        live: false,
+        live: false
       },
       features: {
         snapshots: true,
         regime: true,
-      },
+        riskDecisioning: true,
+        lifecycleSimulation: true,
+        metrics: true
+      }
     };
   }
 
@@ -54,7 +91,7 @@ export class Phase2QueryService {
       return {
         snapshots: [],
         status: 'no_datasets',
-        message: 'No datasets imported yet.',
+        message: 'No datasets imported yet.'
       };
     }
 
@@ -68,20 +105,20 @@ export class Phase2QueryService {
         const snapshot = buildMarketSnapshot({
           candles: dataset.candles,
           symbolSpec,
-          timeframe: dataset.timeframe,
+          timeframe: dataset.timeframe
         });
 
         return {
           datasetId: dataset.id,
           symbolCode: dataset.symbolCode,
-          snapshot,
+          snapshot
         };
       })
       .filter((item): item is NonNullable<typeof item> => item != null);
 
     return {
       snapshots,
-      status: 'ok',
+      status: 'ok'
     };
   }
 
@@ -92,19 +129,125 @@ export class Phase2QueryService {
       return {
         regimes: [],
         status: snapshotPayload.status,
-        message: snapshotPayload.message,
+        message: snapshotPayload.message
       };
     }
 
     const regimes = snapshotPayload.snapshots.map((item) => ({
       datasetId: item.datasetId,
       symbolCode: item.symbolCode,
-      regime: classifyRegime({ snapshot: item.snapshot }),
+      regime: classifyRegime({ snapshot: item.snapshot })
     }));
 
     return {
       regimes,
-      status: 'ok',
+      status: 'ok'
     };
   }
+
+  getBacktestConfigs() {
+    const datasets = this.getDatasets().datasets;
+
+    return {
+      profiles: ['GROWTH_HUNTER', 'PROP_HUNTER'] as ProfileCode[],
+      datasets,
+      defaults: {
+        initialBalance: 10_000,
+        slippageBps: 5,
+        commissionBps: 4,
+        maxConcurrentPositions: 5
+      }
+    };
+  }
+
+  getBacktestRuns() {
+    this.ensureBacktestSeedRun();
+
+    return {
+      runs: this.backtestRunRepository.listRunSummaries(),
+      status: 'ok'
+    };
+  }
+
+  getBacktestRun(runId: string): BacktestRunDetailResponse {
+    this.ensureBacktestSeedRun();
+
+    const run = this.backtestRunRepository.getRun(runId as BacktestRunResult['metadata']['runId']);
+    if (!run) {
+      return {
+        status: 'not_found',
+        runId,
+        message: `Backtest run ${runId} not found`
+      };
+    }
+
+    return {
+      status: 'ok',
+      run: {
+        metadata: run.metadata,
+        config: run.config,
+        metrics: run.metrics,
+        tradeLogSummary: run.trades.map((trade) => ({
+          tradeId: trade.tradeId,
+          symbolCode: trade.symbolCode,
+          side: trade.side,
+          setupCode: trade.setupCode,
+          state: trade.lifecycleState,
+          netPnl: trade.netPnl,
+          openedAtTs: trade.position.openedAtTs,
+          closedAtTs: trade.position.closedAtTs,
+          closeReason: trade.closeReason
+        })),
+        equity: run.equity,
+        rejectedSignals: run.rejectedSignals?.length ?? 0
+      }
+    };
+  }
+
+  private ensureBacktestSeedRun(): void {
+    if (this.backtestRunRepository.listRunSummaries().length > 0) {
+      return;
+    }
+
+    const datasets = this.datasetRepository.listDatasets();
+    if (datasets.length === 0) {
+      return;
+    }
+
+    const candlesBySymbol: Record<string, DatasetRecord['candles']> = {};
+    const symbolSpecsBySymbol: Record<string, SymbolSpec> = {};
+
+    for (const dataset of datasets) {
+      candlesBySymbol[dataset.symbolCode] = dataset.candles;
+      const spec = this.datasetRepository.getSymbol(dataset.symbolCode);
+      if (!spec) {
+        continue;
+      }
+      symbolSpecsBySymbol[dataset.symbolCode] = spec;
+    }
+
+    const minTs = Math.min(...datasets.map((d) => d.candles[0]?.ts ?? Number.MAX_SAFE_INTEGER));
+    const maxTs = Math.max(...datasets.map((d) => d.candles.at(-1)?.ts ?? 0));
+
+    const result = runBacktest({
+      config: {
+        runId: `web-seed-${Date.now()}` as BacktestRunResult['metadata']['runId'],
+        profileCode: 'GROWTH_HUNTER',
+        timeframe: datasets[0]?.timeframe ?? '1m',
+        symbols: datasets.map((d) => d.symbolCode),
+        fromTs: minTs as BacktestRunResult['config']['fromTs'],
+        toTs: maxTs as BacktestRunResult['config']['toTs'],
+        initialBalance: 10_000,
+        slippageBps: 5,
+        commissionBps: 4,
+        maxConcurrentPositions: 5
+      },
+      dataset: { candlesBySymbol, symbolSpecsBySymbol },
+      signalGenerator: ({ symbolCode, symbolSpec, candles }) =>
+        buildPhase4SignalsFromCandles({ symbolCode, symbolSpec, candles })
+    });
+
+    this.backtestRunRepository.saveRun(result);
+  }
+
 }
