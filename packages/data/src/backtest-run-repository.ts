@@ -1,5 +1,5 @@
-import type { RunId } from '@hashi-bot/core';
-import type { BacktestRunResult } from '@hashi-bot/backtest';
+import type { BacktestRunResult, RunMetricsSummary, RunTradeSummary } from '@hashi-bot/backtest';
+import type { RunId, SymbolCode } from '@hashi-bot/core';
 
 export interface BacktestRunSummaryRecord {
   runId: RunId;
@@ -14,10 +14,25 @@ export interface BacktestRunSummaryRecord {
   maxDrawdownPct: number;
 }
 
+export interface BacktestRunSummaryQuery {
+  profileCode?: BacktestRunSummaryRecord['profileCode'];
+  symbolCode?: SymbolCode;
+  limit?: number;
+  offset?: number;
+}
+
+export interface BacktestTradeSummaryQuery {
+  symbolCode?: SymbolCode;
+  limit?: number;
+  offset?: number;
+}
+
 export interface BacktestRunRepository {
   saveRun(result: BacktestRunResult): void;
   getRun(runId: RunId): BacktestRunResult | undefined;
-  listRunSummaries(): BacktestRunSummaryRecord[];
+  getRunMetrics(runId: RunId): RunMetricsSummary | undefined;
+  getRunTradeSummaries(runId: RunId, query?: BacktestTradeSummaryQuery): RunTradeSummary[];
+  listRunSummaries(query?: BacktestRunSummaryQuery): BacktestRunSummaryRecord[];
 }
 
 export class InMemoryBacktestRunRepository implements BacktestRunRepository {
@@ -31,8 +46,53 @@ export class InMemoryBacktestRunRepository implements BacktestRunRepository {
     return this.runs.get(runId);
   }
 
-  listRunSummaries(): BacktestRunSummaryRecord[] {
-    return Array.from(this.runs.values()).map((run) => ({
+  getRunMetrics(runId: RunId): RunMetricsSummary | undefined {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return undefined;
+    }
+
+    return {
+      totalTrades: run.metrics.totalTrades,
+      winRatePct: run.metrics.winRatePct,
+      netPnl: run.metrics.netPnl,
+      maxDrawdownPct: run.metrics.maxDrawdownPct,
+    };
+  }
+
+  getRunTradeSummaries(runId: RunId, query?: BacktestTradeSummaryQuery): RunTradeSummary[] {
+    const run = this.runs.get(runId);
+    if (!run) {
+      return [];
+    }
+
+    const filtered = run.trades
+      .map((trade): RunTradeSummary => ({
+        tradeId: trade.tradeId,
+        symbolCode: trade.symbolCode,
+        side: trade.side,
+        setupCode: trade.setupCode,
+        lifecycleState: trade.lifecycleState,
+        netPnl: trade.netPnl,
+        openedAtTs: trade.position.openedAtTs,
+        closedAtTs: trade.position.closedAtTs,
+        closeReason: trade.closeReason,
+      }))
+      .filter((trade) => {
+        if (query?.symbolCode && trade.symbolCode !== query.symbolCode) {
+          return false;
+        }
+        return true;
+      });
+
+    const offset = query?.offset ?? 0;
+    const limit = query?.limit ?? filtered.length;
+
+    return filtered.slice(offset, offset + limit);
+  }
+
+  listRunSummaries(query?: BacktestRunSummaryQuery): BacktestRunSummaryRecord[] {
+    const summaries = Array.from(this.runs.values()).map((run) => ({
       runId: run.metadata.runId,
       profileCode: run.config.profileCode,
       timeframe: run.config.timeframe,
@@ -42,7 +102,22 @@ export class InMemoryBacktestRunRepository implements BacktestRunRepository {
       totalTrades: run.metrics.totalTrades,
       winRatePct: run.metrics.winRatePct,
       netPnl: run.metrics.netPnl,
-      maxDrawdownPct: run.metrics.maxDrawdownPct
+      maxDrawdownPct: run.metrics.maxDrawdownPct,
     }));
+
+    const filtered = summaries.filter((summary) => {
+      if (query?.profileCode && summary.profileCode !== query.profileCode) {
+        return false;
+      }
+      if (query?.symbolCode && !summary.symbols.includes(query.symbolCode)) {
+        return false;
+      }
+      return true;
+    });
+
+    const offset = query?.offset ?? 0;
+    const limit = query?.limit ?? filtered.length;
+
+    return filtered.slice(offset, offset + limit);
   }
 }

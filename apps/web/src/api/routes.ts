@@ -1,6 +1,9 @@
+import type { InstantBacktestRequest, ReplayControlAction } from '@hashi-bot/backtest';
+import type { ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
+
 import { createWebContainer } from '../lib/container.js';
 
-const { queryService } = createWebContainer();
+const { queryService, instantBacktestService, replayApiService } = createWebContainer();
 
 export function getHealthRoute() {
   return queryService.getHealth();
@@ -26,8 +29,16 @@ export function getRegimeRoute() {
   return queryService.getRegimes();
 }
 
+export function getSignalsRoute() {
+  return queryService.getSignals();
+}
+
 export function getBacktestsRoute() {
-  return queryService.getBacktestRuns();
+  return instantBacktestService.listRuns();
+}
+
+export function createBacktestRoute(payload: InstantBacktestRequest) {
+  return instantBacktestService.launch(payload);
 }
 
 export function getBacktestConfigsRoute() {
@@ -35,5 +46,29 @@ export function getBacktestConfigsRoute() {
 }
 
 export function getBacktestByIdRoute(runId: string) {
-  return queryService.getBacktestRun(runId);
+  return instantBacktestService.getRun(runId);
+}
+
+export interface CreateReplayRoutePayload {
+  datasetId?: string;
+  symbolCodes?: SymbolCode[];
+  profileCode?: ProfileCode;
+  timeframe?: Timeframe;
+  replaySpeed?: number;
+}
+
+export function createReplayRoute(payload: CreateReplayRoutePayload) {
+  return replayApiService.createRun(payload);
+}
+
+export function getReplayRunsRoute() {
+  return replayApiService.listRuns();
+}
+
+export function getReplayByIdRoute(runId: string) {
+  return replayApiService.getRun(runId);
+}
+
+export function controlReplayRoute(runId: string, action: ReplayControlAction) {
+  return replayApiService.controlRun(runId, action);
 }
