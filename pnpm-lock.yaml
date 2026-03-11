@@ -15,11 +15,65 @@ importers:
         specifier: ^5.6.2
         version: 5.9.3
 
+  apps/web:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@hashi-bot/data':
+        specifier: workspace:*
+        version: link:../../packages/data
+      '@hashi-bot/strategy':
+        specifier: workspace:*
+        version: link:../../packages/strategy
+
+  apps/worker:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@hashi-bot/data':
+        specifier: workspace:*
+        version: link:../../packages/data
+      '@hashi-bot/strategy':
+        specifier: workspace:*
+        version: link:../../packages/strategy
+
   packages/core:
     dependencies:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/data:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/indicators:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/market:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/strategy:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hashi-bot/indicators':
+        specifier: workspace:*
+        version: link:../indicators
+      '@hashi-bot/market':
+        specifier: workspace:*
+        version: link:../market
 
 packages:
 
