@@ -173,6 +173,109 @@ export class FoundationPagesService {
     };
   }
 
+
+  getSignalsPage(): FoundationPage {
+    const signals = this.queryService.getSignals();
+
+    return {
+      path: '/signals',
+      title: 'Signals Intelligence',
+      subtitle: 'Qualified setup output, ranking, and qualification pressure by symbol.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('qualified', 'Qualified Signals', 'Latest qualified strategy signals and score ordering.', {
+          status: signals.status,
+          topSignals: signals.status === 'ok' ? (signals.ranking ?? []).slice(0, 20) : [],
+          bestSignal: signals.status === 'ok' ? signals.bestSignals.top ?? null : null,
+        }),
+        createSection('coverage', 'Coverage + Rejections', 'Symbol evaluation coverage and rejection burden.', {
+          symbolsEvaluated: signals.symbolsEvaluated,
+          unqualifiedSummary: signals.unqualifiedSummary,
+        }),
+      ],
+    };
+  }
+
+  getTradesPage(): FoundationPage {
+    const backtestRuns = this.instantBacktestService.listRuns();
+    const replayRuns = this.replayApiService.listRuns();
+
+    const backtestTrades = backtestRuns.runs.flatMap((run) => {
+      const detail = this.instantBacktestService.getRun(run.runId);
+      if (detail.status !== 'ok') {
+        return [];
+      }
+
+      return (detail.run.tradeSummaries ?? []).map((trade) => ({
+        source: 'backtest',
+        runId: run.runId,
+        symbolCode: trade.symbolCode,
+        tradeId: trade.tradeId,
+        side: trade.side,
+        state: trade.lifecycleState,
+        openedAtTs: trade.openedAtTs,
+        closedAtTs: trade.closedAtTs,
+        netPnl: trade.netPnl,
+        closeReason: trade.closeReason,
+      }));
+    });
+
+    return {
+      path: '/trades',
+      title: 'Trade Outcomes',
+      subtitle: 'Trade lifecycle visibility across deterministic research workflows.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('backtest_trades', 'Backtest Trade Log', 'Closed trade outcomes from instant backtest runs.', {
+          count: backtestTrades.length,
+          trades: backtestTrades.slice(0, 100),
+        }),
+        createSection('replay_summary', 'Replay Trade Summary', 'Replay run-level trade counts and PnL snapshots.', {
+          runs: replayRuns.runs.map((run) => ({
+            runId: run.runId,
+            status: run.status,
+            tradeCount: run.totalTrades,
+            realizedPnl: run.netPnl,
+          })),
+        }),
+      ],
+    };
+  }
+
+  getRunsPage(): FoundationPage {
+    const backtestRuns = this.instantBacktestService.listRuns();
+    const replayRuns = this.replayApiService.listRuns();
+
+    return {
+      path: '/runs',
+      title: 'Run History',
+      subtitle: 'Unified run inspection across replay and instant backtest workflows.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('replay_runs', 'Replay Runs', 'Replay run status, symbol, and progress timeline.', replayRuns.runs),
+        createSection('backtest_runs', 'Backtest Runs', 'Backtest run metrics and quality status.', backtestRuns.runs),
+      ],
+    };
+  }
+
+  async getSafetyPage(): Promise<FoundationPage> {
+    const safety = await this.liveStatusService.getSafety();
+    const health = await this.liveStatusService.getHealth();
+    const incidents = await this.liveStatusService.getIncidents();
+
+    return {
+      path: '/safety',
+      title: 'Operational Safety Center',
+      subtitle: 'Watchdog state, lockout visibility, and emergency-readiness context.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('safety_state', 'Safety + Lockout State', 'Live runtime safety shape with explicit unavailable/unknown values.', safety),
+        createSection('health_state', 'Execution Health', 'Heartbeat, sync lag, and execution health telemetry.', health),
+        createSection('incident_feed', 'Incident Feed', 'Recent incidents for operator triage and postmortem review.', incidents),
+      ],
+    };
+  }
+
   async getSettingsPage(): Promise<FoundationPage> {
     const symbols = this.queryService.getSymbols();
     const config = this.queryService.getConfig();

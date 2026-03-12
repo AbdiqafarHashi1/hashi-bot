@@ -6,10 +6,12 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "types": [
       "node"
-    ]
+    ],
+    "jsx": "preserve"
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.tsx"
   ],
   "references": [
     {
@@ -23,6 +25,12 @@
     },
     {
       "path": "../../packages/execution"
+    },
+    {
+      "path": "../../packages/backtest"
+    },
+    {
+      "path": "../../packages/risk"
     }
   ]
 }

@@ -24,13 +24,15 @@ import {
   getSnapshotsRoute,
   getSymbolsRoute,
 } from './api/routes.js';
-import {
-  getBacktestPageRoute,
-  getLivePageRoute,
-  getOverviewPageRoute,
-  getReplayPageRoute,
-  getSettingsPageRoute,
-} from './pages/routes.js';
+import { getOverviewControlCenterPage } from './app/page.js';
+import { getReplayWorkstationPage } from './app/replay/page.js';
+import { getBacktestWorkstationPage } from './app/backtest/page.js';
+import { getLiveOperationsWorkspacePage } from './app/live/page.js';
+import { getSafetyOperationsWorkspacePage } from './app/safety/page.js';
+import { getSettingsWorkspacePage } from './app/settings/page.js';
+import { getSignalsWorkspacePage } from './app/signals/page.js';
+import { getTradesWorkspacePage } from './app/trades/page.js';
+import { getRunsWorkspacePage } from './app/runs/page.js';
 
 export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) {
   if (path.startsWith('/api/backtests/')) {
@@ -102,16 +104,27 @@ export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 
 export async function getPagePayload(path: string) {
   switch (path) {
     case '/':
-      return getOverviewPageRoute();
+      return getOverviewControlCenterPage();
     case '/replay':
-      return getReplayPageRoute();
+      return getReplayWorkstationPage();
     case '/backtest':
-      return getBacktestPageRoute();
+      return getBacktestWorkstationPage();
     case '/live':
-      return getLivePageRoute();
+      return getLiveOperationsWorkspacePage();
+    case '/signals':
+      return getSignalsWorkspacePage();
+    case '/trades':
+      return getTradesWorkspacePage();
+    case '/runs':
+      return getRunsWorkspacePage();
+    case '/safety':
+      return getSafetyOperationsWorkspacePage();
     case '/settings':
-      return getSettingsPageRoute();
+      return getSettingsWorkspacePage();
     default:
       return { error: 'not_found', path };
   }
 }
+
+export * from './app/index.js';
+export * from './components/index.js';
