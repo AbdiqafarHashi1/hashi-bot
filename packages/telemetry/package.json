@@ -1,5 +1,5 @@
 {
-  "name": "@hashi-bot/risk",
+  "name": "@hashi-bot/telemetry",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,10 +17,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -b",
-    "lint": "echo 'No lint configured for @hashi-bot/risk yet'"
+    "lint": "echo 'No lint configured for @hashi-bot/telemetry yet'"
   },
   "dependencies": {
-    "@hashi-bot/core": "workspace:*",
-    "@hashi-bot/market": "workspace:*"
+    "@hashi-bot/core": "workspace:*"
   }
 }

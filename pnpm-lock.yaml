@@ -26,6 +26,9 @@ importers:
       '@hashi-bot/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@hashi-bot/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
       '@hashi-bot/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
@@ -41,9 +44,18 @@ importers:
       '@hashi-bot/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@hashi-bot/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
+      '@hashi-bot/risk':
+        specifier: workspace:*
+        version: link:../../packages/risk
       '@hashi-bot/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
+      '@hashi-bot/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
 
   packages/backtest:
     dependencies:
@@ -68,6 +80,24 @@ importers:
       '@hashi-bot/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/execution:
+    dependencies:
+      '@hashi-bot/backtest':
+        specifier: workspace:*
+        version: link:../backtest
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hashi-bot/risk':
+        specifier: workspace:*
+        version: link:../risk
+      '@hashi-bot/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
+      ccxt:
+        specifier: ^4.4.78
+        version: 4.5.43
 
   packages/indicators:
     dependencies:
@@ -102,7 +132,17 @@ importers:
         specifier: workspace:*
         version: link:../market
 
+  packages/telemetry:
+    dependencies:
+      '@hashi-bot/core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
+
+  ccxt@4.5.43:
+    resolution: {integrity: sha512-uOIOrC0M6Y1uWI1Oflcx4LI9ssVEao3fcR7fpMyfwlvepmy0zlRziBWs/cXbi5YiiQEa48lMhMG72SnOJhYVzA==}
+    engines: {node: '>=15.0.0'}
 
   turbo-darwin-64@2.8.15:
     resolution: {integrity: sha512-EElCh+Ltxex9lXYrouV3hHjKP3HFP31G91KMghpNHR/V99CkFudRcHcnWaorPbzAZizH1m8o2JkLL8rptgb8WQ==}
@@ -143,10 +183,29 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  ccxt@4.5.43:
+    dependencies:
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   turbo-darwin-64@2.8.15:
     optional: true
@@ -176,5 +235,7 @@ snapshots:
       turbo-windows-arm64: 2.8.15
 
   typescript@5.9.3: {}
+
+  ws@8.19.0: {}
 
   zod@3.25.76: {}

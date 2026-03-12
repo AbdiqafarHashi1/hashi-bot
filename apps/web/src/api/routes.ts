@@ -3,7 +3,7 @@ import type { ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
 
 import { createWebContainer } from '../lib/container.js';
 
-const { queryService, instantBacktestService, replayApiService } = createWebContainer();
+const { queryService, instantBacktestService, replayApiService, liveStatusService } = createWebContainer();
 
 export function getHealthRoute() {
   return queryService.getHealth();
@@ -71,4 +71,24 @@ export function getReplayByIdRoute(runId: string) {
 
 export function controlReplayRoute(runId: string, action: ReplayControlAction) {
   return replayApiService.controlRun(runId, action);
+}
+
+export async function getLiveRoute() {
+  return liveStatusService.getLiveState();
+}
+
+export async function getLiveHealthRoute() {
+  return liveStatusService.getHealth();
+}
+
+export async function getLiveOrdersRoute() {
+  return liveStatusService.getOrders();
+}
+
+export async function getLivePositionsRoute() {
+  return liveStatusService.getPositions();
+}
+
+export async function getLiveIncidentsRoute() {
+  return liveStatusService.getIncidents();
 }

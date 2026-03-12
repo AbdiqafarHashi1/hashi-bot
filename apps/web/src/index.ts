@@ -10,6 +10,11 @@ import {
   getConfigRoute,
   getDatasetsRoute,
   getHealthRoute,
+  getLiveHealthRoute,
+  getLiveIncidentsRoute,
+  getLiveOrdersRoute,
+  getLivePositionsRoute,
+  getLiveRoute,
   getRegimeRoute,
   getReplayByIdRoute,
   getReplayRunsRoute,
@@ -25,7 +30,7 @@ import {
   getSettingsPageRoute,
 } from './pages/routes.js';
 
-export function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) {
+export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown) {
   if (path.startsWith('/api/backtests/')) {
     const runId = path.replace('/api/backtests/', '');
     return getBacktestByIdRoute(runId);
@@ -70,12 +75,22 @@ export function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 'GET',
       return getSignalsRoute();
     case '/api/replay':
       return getReplayRunsRoute();
+    case '/api/live':
+      return getLiveRoute();
+    case '/api/live/health':
+      return getLiveHealthRoute();
+    case '/api/live/orders':
+      return getLiveOrdersRoute();
+    case '/api/live/positions':
+      return getLivePositionsRoute();
+    case '/api/live/incidents':
+      return getLiveIncidentsRoute();
     default:
       return { error: 'not_found', path };
   }
 }
 
-export function getPagePayload(path: string) {
+export async function getPagePayload(path: string) {
   switch (path) {
     case '/':
       return getOverviewPageRoute();

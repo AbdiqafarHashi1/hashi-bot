@@ -4,6 +4,7 @@ import type { EpochMs, ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/cor
 import { bootstrapWorker } from './bootstrap.js';
 import { runBacktestLoop } from './loops/backtest.loop.js';
 import { runEvaluationLoop } from './loops/evaluation.loop.js';
+import { runLiveLoop } from './loops/live.loop.js';
 import { runReplayLoop } from './loops/replay.loop.js';
 
 function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
@@ -43,7 +44,7 @@ function parseReplayAction(env: Record<string, string | undefined>): ReplayContr
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
   const datasetId = env.DATASET_ID;
   const workerMode = env.WORKER_MODE ?? 'evaluation';
@@ -66,6 +67,20 @@ function main(): void {
     return;
   }
 
+  if (workerMode === 'live' || workerMode === 'paper') {
+    await runLiveLoop(container, {
+      mode: workerMode,
+      accountRef: env.LIVE_ACCOUNT_REF ?? 'paper-account',
+      profileCode: (env.LIVE_PROFILE as ProfileCode | undefined) ?? 'PROP_HUNTER',
+      watchlistSymbolCodes: parseWatchlist(env.WATCHLIST_SYMBOLS),
+      rankingLimit: env.RANKING_LIMIT == null ? undefined : Number(env.RANKING_LIMIT),
+      staleAfterMs: env.LIVE_STALE_AFTER_MS == null ? 60_000 : Number(env.LIVE_STALE_AFTER_MS),
+      maxCycles: env.LIVE_MAX_CYCLES == null ? 1 : Number(env.LIVE_MAX_CYCLES),
+      cycleDelayMs: env.LIVE_CYCLE_DELAY_MS == null ? 0 : Number(env.LIVE_CYCLE_DELAY_MS)
+    });
+    return;
+  }
+
   runEvaluationLoop(container, {
     datasetId,
     watchlistSymbolCodes: parseWatchlist(env.WATCHLIST_SYMBOLS),
@@ -73,4 +88,10 @@ function main(): void {
   });
 }
 
-main();
+main().catch((error) => {
+  console.error('[worker] fatal error', error);
+  const runtime = globalThis as { process?: { exitCode?: number } };
+  if (runtime.process) {
+    runtime.process.exitCode = 1;
+  }
+});
