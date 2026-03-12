@@ -15,6 +15,9 @@
     "@hashi-bot/core": "workspace:*",
     "@hashi-bot/strategy": "workspace:*",
     "@hashi-bot/data": "workspace:*",
-    "@hashi-bot/backtest": "workspace:*"
+    "@hashi-bot/backtest": "workspace:*",
+    "@hashi-bot/risk": "workspace:*",
+    "@hashi-bot/execution": "workspace:*",
+    "@hashi-bot/telemetry": "workspace:*"
   }
 }

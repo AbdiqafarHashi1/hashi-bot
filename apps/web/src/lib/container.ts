@@ -11,6 +11,7 @@ import { FoundationPagesService } from '../services/foundation-pages.service.js'
 import { Phase2QueryService } from '../services/phase2-query.service.js';
 import { InstantBacktestService } from '../services/instant-backtest.service.js';
 import { ReplayApiService } from '../services/replay-api.service.js';
+import { LiveStatusService } from '../services/live-status.service.js';
 
 export interface WebContainer {
   datasetRepository: DatasetRepository;
@@ -20,6 +21,7 @@ export interface WebContainer {
   runHistoryRepository: RunHistoryRepository;
   replayApiService: ReplayApiService;
   pagesService: FoundationPagesService;
+  liveStatusService: LiveStatusService;
 }
 
 export function createWebContainer(): WebContainer {
@@ -29,6 +31,7 @@ export function createWebContainer(): WebContainer {
   const queryService = new Phase2QueryService(datasetRepository, backtestRunRepository);
   const instantBacktestService = new InstantBacktestService(datasetRepository, backtestRunRepository, runHistoryRepository);
   const replayApiService = new ReplayApiService(datasetRepository, runHistoryRepository);
+  const liveStatusService = new LiveStatusService(datasetRepository);
 
   return {
     datasetRepository,
@@ -37,6 +40,7 @@ export function createWebContainer(): WebContainer {
     instantBacktestService,
     runHistoryRepository,
     replayApiService,
-    pagesService: new FoundationPagesService(queryService, instantBacktestService, replayApiService)
+    pagesService: new FoundationPagesService(queryService, instantBacktestService, replayApiService, liveStatusService),
+    liveStatusService
   };
 }
