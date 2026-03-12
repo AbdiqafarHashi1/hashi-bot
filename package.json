@@ -10,8 +10,18 @@
     "typecheck": "turbo run typecheck",
     "dev:web": "pnpm --filter ./apps/web dev",
     "dev:worker": "pnpm --filter ./apps/worker dev",
-    "verify:env": "node ./scripts/verify-env.mjs",
-    "bootstrap:local": "node ./scripts/bootstrap-local.mjs"
+    "verify:env": "node ./scripts/verify-env.mjs --target=all --mode=development --worker-mode=paper --venue=mock",
+    "bootstrap:local": "node ./scripts/bootstrap-local.mjs",
+    "test": "turbo run test",
+    "verify:migrations": "node ./scripts/verify-migrations-readiness.mjs",
+    "verify:dataset": "node ./scripts/verify-dataset-sanity.mjs",
+    "smoke:backtest": "node ./scripts/smoke-backtest.mjs",
+    "smoke:replay": "node ./scripts/smoke-replay.mjs",
+    "smoke:live:mock": "node ./scripts/smoke-live-mock.mjs",
+    "verify:release": "node ./scripts/verify-release-readiness.mjs",
+    "verify:env:web:prod": "node ./scripts/verify-env.mjs --target=web --mode=production",
+    "verify:env:worker:paper": "node ./scripts/verify-env.mjs --target=worker --mode=development --worker-mode=paper",
+    "verify:env:worker:live": "node ./scripts/verify-env.mjs --target=worker --mode=production --worker-mode=live"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

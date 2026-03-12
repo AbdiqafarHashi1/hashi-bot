@@ -4,8 +4,8 @@ import {
   DEFAULT_SCORE_THRESHOLDS,
   DEFAULT_SCORE_WEIGHTS,
   scoreSetupCandidates,
-  type ScoreEngineConfig,
-} from '../scoring/score-engine.stub.js';
+  type ScoreEngineConfig
+} from '../scoring/score-engine.js';
 import {
   detectBreakoutCandidates,
   detectPullbackV2Candidates,

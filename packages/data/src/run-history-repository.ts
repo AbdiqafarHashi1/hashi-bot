@@ -6,7 +6,7 @@ import type {
   RunMetricsSummary,
   RunStatus,
   RunSummary,
-  RunTradeSummary,
+  RunTradeSummary
 } from '@hashi-bot/backtest';
 import type { DatasetId, EpochMs, RunId, SymbolCode } from '@hashi-bot/core';
 
@@ -55,8 +55,54 @@ function computeTimelineSummary(events: ReplayTimelineEvent[]): ReplayTimelineSu
   return {
     totalEvents: events.length,
     eventTypes,
-    latestEventTs: events.at(-1)?.ts,
+    latestEventTs: events.at(-1)?.ts
   };
+}
+
+function normalizeRange(query?: { offset?: number; limit?: number }): { offset: number; limit: number } {
+  const offset = Math.max(0, query?.offset ?? 0);
+  const limit = Math.max(0, query?.limit ?? Number.MAX_SAFE_INTEGER);
+  return { offset, limit };
+}
+
+function findStartIndexByTimestamp(events: ReplayTimelineEvent[], sinceTs: EpochMs): number {
+  let left = 0;
+  let right = events.length;
+
+  while (left < right) {
+    const mid = Math.floor((left + right) / 2);
+    if (events[mid]!.ts < sinceTs) {
+      left = mid + 1;
+    } else {
+      right = mid;
+    }
+  }
+
+  return left;
+}
+
+function matchesSummaryFilter(summary: RunSummary, query?: RunSummaryQuery): boolean {
+  if (!query) {
+    return true;
+  }
+
+  if (query.mode && summary.mode !== query.mode) {
+    return false;
+  }
+  if (query.status && summary.status !== query.status) {
+    return false;
+  }
+  if (query.profileCode && summary.profileCode !== query.profileCode) {
+    return false;
+  }
+  if (query.datasetId && summary.datasetId !== query.datasetId) {
+    return false;
+  }
+  if (query.symbolCode && !summary.symbols.includes(query.symbolCode)) {
+    return false;
+  }
+
+  return true;
 }
 
 export class InMemoryRunHistoryRepository implements RunHistoryRepository {
@@ -72,7 +118,7 @@ export class InMemoryRunHistoryRepository implements RunHistoryRepository {
     const timelineSummary = detail.timelineSummary ?? computeTimelineSummary(detail.timeline);
     const mergedDetail: RunDetailView = {
       ...detail,
-      timelineSummary,
+      timelineSummary
     };
 
     this.details.set(detail.summary.runId, mergedDetail);
@@ -100,18 +146,30 @@ export class InMemoryRunHistoryRepository implements RunHistoryRepository {
   }
 
   getRunTradeSummaries(runId: RunId, query?: RunTradeSummaryQuery): RunTradeSummary[] {
-    const detail = this.details.get(runId);
-    const trades = detail?.tradeSummaries ?? [];
-    const filtered = trades.filter((trade) => {
-      if (query?.symbolCode && trade.symbolCode !== query.symbolCode) {
-        return false;
-      }
-      return true;
-    });
+    const trades = this.details.get(runId)?.tradeSummaries ?? [];
+    const { offset, limit } = normalizeRange(query);
 
-    const offset = query?.offset ?? 0;
-    const limit = query?.limit ?? filtered.length;
-    return filtered.slice(offset, offset + limit);
+    let skipped = 0;
+    const result: RunTradeSummary[] = [];
+
+    for (const trade of trades) {
+      if (query?.symbolCode && trade.symbolCode !== query.symbolCode) {
+        continue;
+      }
+
+      if (skipped < offset) {
+        skipped += 1;
+        continue;
+      }
+
+      if (result.length >= limit) {
+        break;
+      }
+
+      result.push(trade);
+    }
+
+    return result;
   }
 
   getReplayTimelineSummary(runId: RunId): ReplayTimelineSummary | undefined {
@@ -129,43 +187,41 @@ export class InMemoryRunHistoryRepository implements RunHistoryRepository {
       return [];
     }
 
-    const filtered = detail.timeline.filter((event) => {
-      if (query?.sinceTs && event.ts < query.sinceTs) {
-        return false;
-      }
-      return true;
-    });
+    const events = detail.timeline;
+    const baseIndex = query?.sinceTs !== undefined ? findStartIndexByTimestamp(events, query.sinceTs) : 0;
+    const { offset, limit } = normalizeRange(query);
+    const start = baseIndex + offset;
 
-    const offset = query?.offset ?? 0;
-    const limit = query?.limit ?? filtered.length;
-    return filtered.slice(offset, offset + limit);
+    if (start >= events.length || limit === 0) {
+      return [];
+    }
+
+    return events.slice(start, start + limit);
   }
 
   listRunSummaries(query?: RunSummaryQuery): RunSummary[] {
-    const summaries = Array.from(this.summaries.values());
-    const filtered = summaries.filter((summary) => {
-      if (query?.mode && summary.mode !== query.mode) {
-        return false;
-      }
-      if (query?.status && summary.status !== query.status) {
-        return false;
-      }
-      if (query?.profileCode && summary.profileCode !== query.profileCode) {
-        return false;
-      }
-      if (query?.datasetId && summary.datasetId !== query.datasetId) {
-        return false;
-      }
-      if (query?.symbolCode && !summary.symbols.includes(query.symbolCode)) {
-        return false;
-      }
-      return true;
-    });
+    const { offset, limit } = normalizeRange(query);
+    let skipped = 0;
+    const result: RunSummary[] = [];
 
-    const offset = query?.offset ?? 0;
-    const limit = query?.limit ?? filtered.length;
+    for (const summary of this.summaries.values()) {
+      if (!matchesSummaryFilter(summary, query)) {
+        continue;
+      }
 
-    return filtered.slice(offset, offset + limit);
+      if (skipped < offset) {
+        skipped += 1;
+        continue;
+      }
+
+      if (result.length >= limit) {
+        break;
+      }
+
+      result.push(summary);
+    }
+
+    return result;
   }
 
   private summaryToMetrics(summary: RunSummary | undefined): RunMetricsSummary | undefined {
@@ -177,7 +233,7 @@ export class InMemoryRunHistoryRepository implements RunHistoryRepository {
       totalTrades: summary.totalTrades,
       winRatePct: summary.winRatePct,
       netPnl: summary.netPnl,
-      maxDrawdownPct: summary.maxDrawdownPct,
+      maxDrawdownPct: summary.maxDrawdownPct
     };
   }
 }

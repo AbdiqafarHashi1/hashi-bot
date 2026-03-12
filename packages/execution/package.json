@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo 'No lint configured for @hashi-bot/execution yet'"
+    "lint": "echo 'No lint configured for @hashi-bot/execution yet'",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@hashi-bot/core": "workspace:*",

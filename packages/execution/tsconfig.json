@@ -7,5 +7,19 @@
   },
   "include": [
     "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../risk"
+    },
+    {
+      "path": "../backtest"
+    },
+    {
+      "path": "../telemetry"
+    }
   ]
 }

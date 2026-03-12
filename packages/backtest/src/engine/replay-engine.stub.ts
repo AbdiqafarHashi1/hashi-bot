@@ -1,7 +1,7 @@
 import type { Candle, EpochMs, MarketSnapshot, StrategySignal, SymbolCode, SymbolSpec } from '@hashi-bot/core';
-import { evaluateRiskDecision, type PortfolioState } from '@hashi-bot/risk';
+import { evaluateRiskDecision } from '@hashi-bot/risk';
 
-import { DEFAULT_FILL_CONFIG } from '../fills/fill-simulator.stub.js';
+import { DEFAULT_FILL_CONFIG } from '../fills/fill-simulator.js';
 import type {
   ReplayControlAction,
   ReplayRegimeAssessment,
@@ -11,6 +11,7 @@ import type {
   ReplayTimelineEvent,
 } from '../types/replay.js';
 import type { SimulatedTrade } from '../types/simulated-trade.js';
+import { buildPortfolioState, getDailyKey } from './portfolio-state.js';
 import { advanceTradeState, createPendingTrade, DEFAULT_STATE_MACHINE_CONFIG, type StateMachineConfig } from './state-machine.js';
 
 export interface ReplayDataset {
@@ -48,85 +49,6 @@ export interface ReplayEngineOptions {
   snapshotBuilder?: (context: ReplaySnapshotContext) => MarketSnapshot;
   regimeClassifier?: (context: ReplayRegimeContext) => ReplayRegimeAssessment;
   stateMachine?: Partial<StateMachineConfig>;
-}
-
-function getDailyKey(ts: number): string {
-  return new Date(ts).toISOString().slice(0, 10);
-}
-
-function calculateUnrealized(openTrades: SimulatedTrade[], latestPriceBySymbol: Record<string, number>): number {
-  let unrealized = 0;
-
-  for (const trade of openTrades) {
-    if (trade.lifecycleState === 'closed' || trade.lifecycleState === 'cancelled' || trade.lifecycleState === 'rejected') {
-      continue;
-    }
-
-    const mark = latestPriceBySymbol[trade.symbolCode];
-    const entry = trade.position.entryPrice;
-    const qty = trade.position.remainingQty ?? 0;
-    if (mark === undefined || entry === undefined || qty <= 0) {
-      continue;
-    }
-
-    unrealized += trade.side === 'long' ? (mark - entry) * qty : (entry - mark) * qty;
-  }
-
-  return unrealized;
-}
-
-function buildPortfolioState(args: {
-  ts: number;
-  balance: number;
-  openTrades: SimulatedTrade[];
-  latestPriceBySymbol: Record<string, number>;
-  dailyTrades: number;
-  dailyRealizedPnl: number;
-  consecutiveLosses: number;
-}): PortfolioState {
-  const perSymbol = new Map<string, { openRiskPct: number; openNotional: number; openPositions: number }>();
-
-  for (const trade of args.openTrades) {
-    if (trade.lifecycleState === 'closed' || trade.lifecycleState === 'cancelled' || trade.lifecycleState === 'rejected') {
-      continue;
-    }
-
-    const qty = trade.position.remainingQty ?? 0;
-    if (qty <= 0) {
-      continue;
-    }
-
-    const existing = perSymbol.get(trade.symbolCode) ?? { openRiskPct: 0, openNotional: 0, openPositions: 0 };
-    perSymbol.set(trade.symbolCode, {
-      openRiskPct: existing.openRiskPct + trade.plan.riskPct,
-      openNotional: existing.openNotional + trade.plan.entry * qty,
-      openPositions: existing.openPositions + 1,
-    });
-  }
-
-  const unrealizedPnl = calculateUnrealized(args.openTrades, args.latestPriceBySymbol);
-  const equity = args.balance + unrealizedPnl;
-
-  return {
-    asOfTs: args.ts,
-    equity,
-    balance: args.balance,
-    unrealizedPnl,
-    realizedPnl: args.balance,
-    openPositions: args.openTrades.filter(
-      (t) => t.lifecycleState !== 'closed' && t.lifecycleState !== 'cancelled' && t.lifecycleState !== 'rejected'
-    ).length,
-    portfolioHeatPct: Array.from(perSymbol.values()).reduce((acc, item) => acc + item.openRiskPct, 0),
-    dailyPnl: args.dailyRealizedPnl,
-    dailyTrades: args.dailyTrades,
-    consecutiveLosses: args.consecutiveLosses,
-    perSymbolExposure: Array.from(perSymbol.entries()).map(([symbolCode, value]) => ({
-      symbolCode: symbolCode as SymbolCode,
-      openRiskPct: value.openRiskPct,
-      openNotional: value.openNotional,
-      openPositions: value.openPositions,
-    })),
-  };
 }
 
 function createEvent(args: {

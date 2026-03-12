@@ -6,6 +6,7 @@ import { runBacktestLoop } from './loops/backtest.loop.js';
 import { runEvaluationLoop } from './loops/evaluation.loop.js';
 import { runLiveLoop } from './loops/live.loop.js';
 import { runReplayLoop } from './loops/replay.loop.js';
+import { resolveWorkerRuntimeEnv } from './lib/runtime-env.js';
 import { buildRecoveryEmergencyCommands } from './services/operational-guard.service.js';
 
 function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
@@ -22,22 +23,42 @@ function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
   return parsed.length > 0 ? parsed : undefined;
 }
 
+
+
+function parseFiniteNumber(raw: string | undefined, fallback: number): number {
+  if (raw == null) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = parseFiniteNumber(raw, fallback);
+  return Math.max(1, Math.floor(parsed));
+}
+
+function parseNonNegativeInt(raw: string | undefined, fallback: number): number {
+  const parsed = parseFiniteNumber(raw, fallback);
+  return Math.max(0, Math.floor(parsed));
+}
+
 function parseReplayAction(env: Record<string, string | undefined>): ReplayControlAction {
   const action = env.REPLAY_ACTION ?? 'step';
 
   switch (action) {
     case 'step':
-      return { type: 'step', steps: env.REPLAY_STEPS == null ? 1 : Number(env.REPLAY_STEPS) };
+      return { type: 'step', steps: parsePositiveInt(env.REPLAY_STEPS, 1) };
     case 'play':
       return { type: 'play' };
     case 'pause':
       return { type: 'pause' };
     case 'jump_to_index':
-      return { type: 'jump_to_index', barIndex: Number(env.REPLAY_INDEX ?? 0) };
+      return { type: 'jump_to_index', barIndex: parseNonNegativeInt(env.REPLAY_INDEX, 0) };
     case 'jump_to_timestamp':
-      return { type: 'jump_to_timestamp', timestamp: Number(env.REPLAY_TIMESTAMP ?? Date.now()) as EpochMs };
+      return { type: 'jump_to_timestamp', timestamp: parseNonNegativeInt(env.REPLAY_TIMESTAMP, Date.now()) as EpochMs };
     case 'set_speed':
-      return { type: 'set_speed', speed: Number(env.REPLAY_SPEED ?? 1) };
+      return { type: 'set_speed', speed: Math.min(100, Math.max(0.1, parseFiniteNumber(env.REPLAY_SPEED, 1))) };
     case 'reset':
       return { type: 'reset' };
     default:
@@ -47,10 +68,11 @@ function parseReplayAction(env: Record<string, string | undefined>): ReplayContr
 
 async function main(): Promise<void> {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+  const runtime = resolveWorkerRuntimeEnv(env);
   const datasetId = env.DATASET_ID;
-  const workerMode = env.WORKER_MODE ?? 'evaluation';
-  const accountRef = env.LIVE_ACCOUNT_REF ?? 'paper-account';
-  const staleAfterMs = env.LIVE_STALE_AFTER_MS == null ? 60_000 : Number(env.LIVE_STALE_AFTER_MS);
+  const workerMode = runtime.mode;
+  const accountRef = runtime.accountRef;
+  const staleAfterMs = parseNonNegativeInt(env.LIVE_STALE_AFTER_MS, 60_000);
 
   const { container, startupRecovery } = await bootstrapWorker({
     mode: workerMode,
@@ -58,6 +80,9 @@ async function main(): Promise<void> {
     staleAfterMs,
     env
   });
+  console.log(`[worker] startup mode=${workerMode} venue=${runtime.executionVenue} nodeEnv=${runtime.nodeEnv}`);
+
+
 
   if (workerMode === 'backtest') {
     runBacktestLoop(container, datasetId);
@@ -70,7 +95,7 @@ async function main(): Promise<void> {
       symbolCodes: parseWatchlist(env.REPLAY_SYMBOLS),
       profileCode: (env.REPLAY_PROFILE as ProfileCode | undefined) ?? 'GROWTH_HUNTER',
       timeframe: (env.REPLAY_TIMEFRAME as Timeframe | undefined) ?? '1m',
-      replaySpeed: env.REPLAY_SPEED == null ? 1 : Number(env.REPLAY_SPEED),
+      replaySpeed: Math.min(100, Math.max(0.1, parseFiniteNumber(env.REPLAY_SPEED, 1))),
       action: parseReplayAction(env),
     });
     return;
@@ -82,10 +107,10 @@ async function main(): Promise<void> {
       accountRef,
       profileCode: (env.LIVE_PROFILE as ProfileCode | undefined) ?? 'PROP_HUNTER',
       watchlistSymbolCodes: parseWatchlist(env.WATCHLIST_SYMBOLS),
-      rankingLimit: env.RANKING_LIMIT == null ? undefined : Number(env.RANKING_LIMIT),
+      rankingLimit: env.RANKING_LIMIT == null ? undefined : parsePositiveInt(env.RANKING_LIMIT, 5),
       staleAfterMs,
-      maxCycles: env.LIVE_MAX_CYCLES == null ? 1 : Number(env.LIVE_MAX_CYCLES),
-      cycleDelayMs: env.LIVE_CYCLE_DELAY_MS == null ? 0 : Number(env.LIVE_CYCLE_DELAY_MS),
+      maxCycles: parsePositiveInt(env.LIVE_MAX_CYCLES, 1),
+      cycleDelayMs: parseNonNegativeInt(env.LIVE_CYCLE_DELAY_MS, 0),
       startupRecovery,
       startupEmergencyCommands: buildRecoveryEmergencyCommands({
         outcome: startupRecovery?.decision.outcome,
@@ -99,7 +124,7 @@ async function main(): Promise<void> {
   runEvaluationLoop(container, {
     datasetId,
     watchlistSymbolCodes: parseWatchlist(env.WATCHLIST_SYMBOLS),
-    rankingLimit: env.RANKING_LIMIT == null ? undefined : Number(env.RANKING_LIMIT),
+    rankingLimit: env.RANKING_LIMIT == null ? undefined : parsePositiveInt(env.RANKING_LIMIT, 5),
   });
 }
 

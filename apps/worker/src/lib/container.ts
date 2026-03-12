@@ -1,4 +1,4 @@
-import type { ExecutionVenue } from '@hashi-bot/core';
+import { isExecutionVenue, parseExecutionVenue, type ExecutionVenue } from '@hashi-bot/core';
 import {
   InMemoryBacktestRunRepository,
   InMemoryDatasetRepository,
@@ -53,9 +53,29 @@ function env(): Record<string, string | undefined> {
   return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 }
 
+type CcxtMarketType = 'spot' | 'swap' | 'future' | 'margin';
+
+const CCXT_MARKET_TYPES: readonly CcxtMarketType[] = ['spot', 'swap', 'future', 'margin'];
+
+function parseCcxtMarketType(value: string | undefined): CcxtMarketType {
+  if (!value) {
+    return 'spot';
+  }
+
+  if (!CCXT_MARKET_TYPES.includes(value as CcxtMarketType)) {
+    throw new Error(`[worker:env] Invalid CCXT_MARKET_TYPE: ${value}. Expected one of ${CCXT_MARKET_TYPES.join(', ')}.`);
+  }
+
+  return value as CcxtMarketType;
+}
+
 function buildExecutionAdapter(datasetRepository: DatasetRepository): ExecutionAdapter {
   const vars = env();
-  const venue = (vars.EXECUTION_VENUE ?? 'mock') as ExecutionVenue;
+  if (vars.EXECUTION_VENUE && !isExecutionVenue(vars.EXECUTION_VENUE)) {
+    throw new Error(`[worker:env] Invalid EXECUTION_VENUE: ${vars.EXECUTION_VENUE}. Expected mock|ccxt|ctrader.`);
+  }
+
+  const venue: ExecutionVenue = parseExecutionVenue(vars.EXECUTION_VENUE);
   const accountRef = vars.LIVE_ACCOUNT_REF ?? 'paper-account';
   const symbols = datasetRepository.listSymbols();
 
@@ -67,7 +87,7 @@ function buildExecutionAdapter(datasetRepository: DatasetRepository): ExecutionA
       secret: vars.CCXT_API_SECRET ?? '',
       password: vars.CCXT_API_PASSWORD,
       sandbox: vars.CCXT_SANDBOX === 'true',
-      marketType: (vars.CCXT_MARKET_TYPE as 'spot' | 'swap' | 'future' | 'margin' | undefined) ?? 'spot',
+      marketType: parseCcxtMarketType(vars.CCXT_MARKET_TYPE),
       symbolSpecs: symbols
     });
   }
