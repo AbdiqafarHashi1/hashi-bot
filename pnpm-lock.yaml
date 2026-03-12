@@ -35,6 +35,9 @@ importers:
       '@hashi-bot/execution':
         specifier: workspace:*
         version: link:../../packages/execution
+      '@hashi-bot/risk':
+        specifier: workspace:*
+        version: link:../../packages/risk
       '@hashi-bot/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
