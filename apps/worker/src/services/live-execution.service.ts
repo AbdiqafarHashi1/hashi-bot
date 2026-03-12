@@ -130,8 +130,10 @@ export class LiveExecutionService {
     });
 
     const accountSnapshot = await this.executionAdapter.getAccountSnapshot(input.accountRef);
-    const openOrders = await this.executionAdapter.getOpenOrders(input.accountRef);
-    const openPositions = await this.executionAdapter.getOpenPositions(input.accountRef);
+    const openOrdersResult = await this.safeLoadOpenOrders(input.accountRef);
+    const openPositionsResult = await this.safeLoadOpenPositions(input.accountRef);
+    const openOrders = openOrdersResult.value;
+    const openPositions = openPositionsResult.value;
 
     this.localExpectedOrders = openOrders;
     this.localExpectedPositions = openPositions;
@@ -224,17 +226,20 @@ export class LiveExecutionService {
       }
     }
 
-    const syncSnapshot = await this.executionAdapter.sync(input.accountRef, {
-      symbolCodes: input.watchlistSymbolCodes
+    const syncSnapshot = await this.safeSyncSnapshot(input.accountRef, {
+      symbolCodes: input.watchlistSymbolCodes,
+      accountSnapshot,
+      openOrders,
+      openPositions
     });
 
     const cycleCompletedAtTs = Date.now() as EpochMs;
 
-    this.lastFeedTs = syncSnapshot.fetchedAtTs;
-    this.lastSyncTs = syncSnapshot.fetchedAtTs;
+    this.lastFeedTs = syncSnapshot.snapshot.fetchedAtTs;
+    this.lastSyncTs = syncSnapshot.snapshot.fetchedAtTs;
 
     const reconciliation = reconcileExecutionState({
-      venueSnapshot: syncSnapshot,
+      venueSnapshot: syncSnapshot.snapshot,
       local: {
         accountRef: input.accountRef,
         openOrders: this.localExpectedOrders,
@@ -250,9 +255,15 @@ export class LiveExecutionService {
       nowTs: cycleCompletedAtTs
     });
 
-    const incidents = [...emergencyReport.incidents, ...reconciliationIncidents];
+    const incidents = [
+      ...emergencyReport.incidents,
+      ...openOrdersResult.incidents,
+      ...openPositionsResult.incidents,
+      ...syncSnapshot.incidents,
+      ...reconciliationIncidents
+    ];
 
-    await publishExecutionIncidents(this.incidentSink, reconciliationIncidents);
+    await publishExecutionIncidents(this.incidentSink, incidents);
 
     this.updateFailureCounters({ recentResults, reconciliation });
 
@@ -318,7 +329,7 @@ export class LiveExecutionService {
       ordersPlaced,
       ordersSkipped,
       ordersFailed,
-      syncSnapshot,
+      syncSnapshot: syncSnapshot.snapshot,
       reconciliation,
       incidents,
       watchdog,
@@ -327,6 +338,107 @@ export class LiveExecutionService {
       operationalSummary,
       emergencyCommandResults: emergencyReport.results
     };
+  }
+
+
+  private buildSyncDegradedIncident(args: {
+    accountRef: string;
+    message: string;
+    occurredAtTs: EpochMs;
+    severity?: IncidentSeverity;
+  }): ExecutionIncidentRecord {
+    return {
+      incidentId: `${this.executionAdapter.venue}_${args.accountRef}_sync_${args.occurredAtTs}`,
+      venue: this.executionAdapter.venue,
+      accountRef: args.accountRef,
+      type: 'network_connectivity_issue',
+      severity: args.severity ?? 'warning',
+      message: args.message,
+      occurredAtTs: args.occurredAtTs,
+      retriable: true,
+    };
+  }
+
+  private async safeLoadOpenOrders(
+    accountRef: string
+  ): Promise<{ value: VenueOrder[]; incidents: ExecutionIncidentRecord[] }> {
+    try {
+      return { value: await this.executionAdapter.getOpenOrders(accountRef), incidents: [] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_open_orders_error';
+      return {
+        value: [],
+        incidents: [
+          this.buildSyncDegradedIncident({
+            accountRef,
+            message: `open_orders_unavailable:${message}`,
+            occurredAtTs: Date.now() as EpochMs
+          })
+        ]
+      };
+    }
+  }
+
+  private async safeLoadOpenPositions(
+    accountRef: string
+  ): Promise<{ value: VenuePosition[]; incidents: ExecutionIncidentRecord[] }> {
+    try {
+      return { value: await this.executionAdapter.getOpenPositions(accountRef), incidents: [] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_open_positions_error';
+      return {
+        value: [],
+        incidents: [
+          this.buildSyncDegradedIncident({
+            accountRef,
+            message: `open_positions_unavailable:${message}`,
+            occurredAtTs: Date.now() as EpochMs
+          })
+        ]
+      };
+    }
+  }
+
+  private async safeSyncSnapshot(
+    accountRef: string,
+    args: {
+      symbolCodes?: SymbolCode[];
+      accountSnapshot: SyncSnapshot['account'];
+      openOrders: VenueOrder[];
+      openPositions: VenuePosition[];
+    }
+  ): Promise<{ snapshot: SyncSnapshot; incidents: ExecutionIncidentRecord[] }> {
+    try {
+      return {
+        snapshot: await this.executionAdapter.sync(accountRef, { symbolCodes: args.symbolCodes }),
+        incidents: []
+      };
+    } catch (error) {
+      const nowTs = Date.now() as EpochMs;
+      const message = error instanceof Error ? error.message : 'unknown_sync_error';
+      return {
+        snapshot: {
+          venue: this.executionAdapter.venue,
+          accountRef,
+          fetchedAtTs: nowTs,
+          account: args.accountSnapshot,
+          openOrders: args.openOrders,
+          openPositions: args.openPositions,
+          raw: {
+            degraded: true,
+            reason: message
+          }
+        },
+        incidents: [
+          this.buildSyncDegradedIncident({
+            accountRef,
+            message: `sync_unavailable_using_partial_snapshot:${message}`,
+            occurredAtTs: nowTs,
+            severity: 'error'
+          })
+        ]
+      };
+    }
   }
 
   private deriveHighestIncidentSeverity(incidents: ExecutionIncidentRecord[]): IncidentSeverity | undefined {

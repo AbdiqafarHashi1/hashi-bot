@@ -1,4 +1,3 @@
-import type { ExecutionVenue } from '@hashi-bot/core';
 import type { ExecutionAdapter } from '@hashi-bot/execution';
 
 export interface LiveSafetyRailsInput {
@@ -28,7 +27,7 @@ export class LiveSafetyRailsService {
       return { allowed: true, reasons, warnings };
     }
 
-    const venue = this.adapter.venue as ExecutionVenue;
+    const venue = this.adapter.venue;
 
     if (!required(input.accountRef)) {
       reasons.push('missing_account_ref');

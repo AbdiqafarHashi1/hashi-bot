@@ -35,11 +35,51 @@ export interface BacktestRunRepository {
   listRunSummaries(query?: BacktestRunSummaryQuery): BacktestRunSummaryRecord[];
 }
 
+function normalizeRange(query?: { offset?: number; limit?: number }): { offset: number; limit: number } {
+  const offset = Math.max(0, query?.offset ?? 0);
+  const limit = Math.max(0, query?.limit ?? Number.MAX_SAFE_INTEGER);
+  return { offset, limit };
+}
+
+function summarizeTrade(result: BacktestRunResult): RunTradeSummary[] {
+  return result.trades.map((trade): RunTradeSummary => ({
+    tradeId: trade.tradeId,
+    symbolCode: trade.symbolCode,
+    side: trade.side,
+    setupCode: trade.setupCode,
+    lifecycleState: trade.lifecycleState,
+    netPnl: trade.netPnl,
+    openedAtTs: trade.position.openedAtTs,
+    closedAtTs: trade.position.closedAtTs,
+    closeReason: trade.closeReason
+  }));
+}
+
+function summarizeRun(result: BacktestRunResult): BacktestRunSummaryRecord {
+  return {
+    runId: result.metadata.runId,
+    profileCode: result.config.profileCode,
+    timeframe: result.config.timeframe,
+    symbols: result.config.symbols,
+    startedAtTs: result.metadata.startedAtTs,
+    completedAtTs: result.metadata.completedAtTs,
+    totalTrades: result.metrics.totalTrades,
+    winRatePct: result.metrics.winRatePct,
+    netPnl: result.metrics.netPnl,
+    maxDrawdownPct: result.metrics.maxDrawdownPct
+  };
+}
+
 export class InMemoryBacktestRunRepository implements BacktestRunRepository {
   private readonly runs = new Map<RunId, BacktestRunResult>();
+  private readonly summaries = new Map<RunId, BacktestRunSummaryRecord>();
+  private readonly tradeSummaries = new Map<RunId, RunTradeSummary[]>();
 
   saveRun(result: BacktestRunResult): void {
-    this.runs.set(result.metadata.runId, result);
+    const runId = result.metadata.runId;
+    this.runs.set(runId, result);
+    this.summaries.set(runId, summarizeRun(result));
+    this.tradeSummaries.set(runId, summarizeTrade(result));
   }
 
   getRun(runId: RunId): BacktestRunResult | undefined {
@@ -56,68 +96,62 @@ export class InMemoryBacktestRunRepository implements BacktestRunRepository {
       totalTrades: run.metrics.totalTrades,
       winRatePct: run.metrics.winRatePct,
       netPnl: run.metrics.netPnl,
-      maxDrawdownPct: run.metrics.maxDrawdownPct,
+      maxDrawdownPct: run.metrics.maxDrawdownPct
     };
   }
 
   getRunTradeSummaries(runId: RunId, query?: BacktestTradeSummaryQuery): RunTradeSummary[] {
-    const run = this.runs.get(runId);
-    if (!run) {
-      return [];
+    const trades = this.tradeSummaries.get(runId) ?? [];
+    const { offset, limit } = normalizeRange(query);
+
+    let skipped = 0;
+    const result: RunTradeSummary[] = [];
+
+    for (const trade of trades) {
+      if (query?.symbolCode && trade.symbolCode !== query.symbolCode) {
+        continue;
+      }
+
+      if (skipped < offset) {
+        skipped += 1;
+        continue;
+      }
+
+      if (result.length >= limit) {
+        break;
+      }
+
+      result.push(trade);
     }
 
-    const filtered = run.trades
-      .map((trade): RunTradeSummary => ({
-        tradeId: trade.tradeId,
-        symbolCode: trade.symbolCode,
-        side: trade.side,
-        setupCode: trade.setupCode,
-        lifecycleState: trade.lifecycleState,
-        netPnl: trade.netPnl,
-        openedAtTs: trade.position.openedAtTs,
-        closedAtTs: trade.position.closedAtTs,
-        closeReason: trade.closeReason,
-      }))
-      .filter((trade) => {
-        if (query?.symbolCode && trade.symbolCode !== query.symbolCode) {
-          return false;
-        }
-        return true;
-      });
-
-    const offset = query?.offset ?? 0;
-    const limit = query?.limit ?? filtered.length;
-
-    return filtered.slice(offset, offset + limit);
+    return result;
   }
 
   listRunSummaries(query?: BacktestRunSummaryQuery): BacktestRunSummaryRecord[] {
-    const summaries = Array.from(this.runs.values()).map((run) => ({
-      runId: run.metadata.runId,
-      profileCode: run.config.profileCode,
-      timeframe: run.config.timeframe,
-      symbols: run.config.symbols,
-      startedAtTs: run.metadata.startedAtTs,
-      completedAtTs: run.metadata.completedAtTs,
-      totalTrades: run.metrics.totalTrades,
-      winRatePct: run.metrics.winRatePct,
-      netPnl: run.metrics.netPnl,
-      maxDrawdownPct: run.metrics.maxDrawdownPct,
-    }));
+    const { offset, limit } = normalizeRange(query);
+    let skipped = 0;
+    const result: BacktestRunSummaryRecord[] = [];
 
-    const filtered = summaries.filter((summary) => {
+    for (const summary of this.summaries.values()) {
       if (query?.profileCode && summary.profileCode !== query.profileCode) {
-        return false;
+        continue;
       }
       if (query?.symbolCode && !summary.symbols.includes(query.symbolCode)) {
-        return false;
+        continue;
       }
-      return true;
-    });
 
-    const offset = query?.offset ?? 0;
-    const limit = query?.limit ?? filtered.length;
+      if (skipped < offset) {
+        skipped += 1;
+        continue;
+      }
 
-    return filtered.slice(offset, offset + limit);
+      if (result.length >= limit) {
+        break;
+      }
+
+      result.push(summary);
+    }
+
+    return result;
   }
 }

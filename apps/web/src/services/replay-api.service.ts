@@ -23,6 +23,53 @@ interface ReplaySessionRecord {
   engine: ReturnType<typeof createReplayEngine>;
 }
 
+
+function ensureFiniteNumber(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function sanitizeReplaySpeed(value: number | undefined): number {
+  const speed = ensureFiniteNumber(value, 1);
+  return Math.min(100, Math.max(0.1, speed));
+}
+
+function normalizeSymbolCodes(symbols?: SymbolCode[]): SymbolCode[] | undefined {
+  if (!symbols || symbols.length === 0) {
+    return undefined;
+  }
+
+  const unique = Array.from(new Set(symbols.filter((item) => typeof item === 'string' && item.trim().length > 0)));
+  return unique.length > 0 ? unique : undefined;
+}
+
+function validateReplayAction(action: ReplayControlAction): void {
+  switch (action.type) {
+    case 'step':
+      if (action.steps !== undefined && (!Number.isFinite(action.steps) || action.steps < 1)) {
+        throw new Error('Replay step action requires steps >= 1.');
+      }
+      return;
+    case 'jump_to_index':
+      if (!Number.isFinite(action.barIndex) || action.barIndex < 0) {
+        throw new Error('Replay jump_to_index requires barIndex >= 0.');
+      }
+      return;
+    case 'jump_to_timestamp':
+      if (!Number.isFinite(action.timestamp) || action.timestamp < 0) {
+        throw new Error('Replay jump_to_timestamp requires timestamp >= 0.');
+      }
+      return;
+    case 'set_speed':
+      if (!Number.isFinite(action.speed) || action.speed <= 0) {
+        throw new Error('Replay set_speed requires speed > 0.');
+      }
+      return;
+    case 'play':
+    case 'pause':
+    case 'reset':
+      return;
+  }
+}
 export class ReplayApiService {
   private readonly sessions = new Map<RunId, ReplaySessionRecord>();
 
@@ -37,7 +84,9 @@ export class ReplayApiService {
       throw new Error('No datasets available for replay run creation');
     }
 
-    const symbols = request.symbolCodes?.length ? request.symbolCodes : datasets.map((dataset) => dataset.symbolCode);
+    const requestedSymbols = normalizeSymbolCodes(request.symbolCodes);
+    const symbols = requestedSymbols?.length ? requestedSymbols : datasets.map((dataset) => dataset.symbolCode);
+    const symbolSet = new Set<SymbolCode>(symbols);
     const runId = createRunId();
 
     const config: ReplayRunConfig = {
@@ -50,7 +99,7 @@ export class ReplayApiService {
         symbols,
         primarySymbol: symbols[0],
       },
-      replaySpeed: request.replaySpeed ?? 1,
+      replaySpeed: sanitizeReplaySpeed(request.replaySpeed),
       maxTimelineEvents: 300,
     };
 
@@ -58,7 +107,7 @@ export class ReplayApiService {
     const symbolSpecsBySymbol: Record<string, NonNullable<ReturnType<DatasetRepository['getSymbol']>>> = {};
 
     for (const dataset of datasets) {
-      if (!symbols.includes(dataset.symbolCode)) {
+      if (!symbolSet.has(dataset.symbolCode)) {
         continue;
       }
       const symbolSpec = this.datasetRepository.getSymbol(dataset.symbolCode);
@@ -93,10 +142,15 @@ export class ReplayApiService {
 
     this.sessions.set(runId, { config, engine });
 
-    this.runHistoryRepository.saveLaunchRequest(runId, {
-      mode: 'replay',
-      replay: config,
-    });
+    try {
+      this.runHistoryRepository.saveLaunchRequest(runId, {
+        mode: 'replay',
+        replay: config
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_replay_launch_persistence_error';
+      throw new Error(`Replay launch persistence failed: ${message}`);
+    }
 
     const initial = engine.step(0);
     this.persist(runId, initial.state, 'queued');
@@ -104,15 +158,40 @@ export class ReplayApiService {
     return initial;
   }
 
-  listRuns() {
-    return {
-      status: 'ok' as const,
-      runs: this.runHistoryRepository.listRunSummaries({ mode: 'replay' }),
-    };
+  listRuns(query: { limit?: number; offset?: number } = {}) {
+    try {
+      return {
+        status: 'ok' as const,
+        runs: this.runHistoryRepository.listRunSummaries({ mode: 'replay', limit: query.limit, offset: query.offset })
+      };
+    } catch (error) {
+      return {
+        status: 'unavailable' as const,
+        runs: [],
+        message: error instanceof Error ? error.message : 'unknown_replay_run_list_error'
+      };
+    }
   }
 
   getRun(runId: string) {
-    const detail = this.runHistoryRepository.getRunDetail(runId as RunId);
+    if (!runId.trim()) {
+      return {
+        status: 'invalid_request' as const,
+        runId,
+        message: 'Replay runId is required.'
+      };
+    }
+
+    let detail;
+    try {
+      detail = this.runHistoryRepository.getRunDetail(runId as RunId);
+    } catch (error) {
+      return {
+        status: 'unavailable' as const,
+        runId,
+        message: error instanceof Error ? error.message : 'unknown_replay_detail_error'
+      };
+    }
     if (!detail) {
       return {
         status: 'not_found' as const,
@@ -128,6 +207,11 @@ export class ReplayApiService {
   }
 
   controlRun(runId: string, action: ReplayControlAction): ReplayStepResult {
+    if (!runId.trim()) {
+      throw new Error('Replay control requires a non-empty runId.');
+    }
+    validateReplayAction(action);
+
     const session = this.sessions.get(runId as RunId);
     if (!session) {
       throw new Error(`Replay run ${runId} is not active in memory`);
@@ -154,11 +238,13 @@ export class ReplayApiService {
     }
 
     const all = this.datasetRepository.listDatasets();
-    if (!request.symbolCodes?.length) {
+    const requestedSymbols = normalizeSymbolCodes(request.symbolCodes);
+    if (!requestedSymbols?.length) {
       return all;
     }
 
-    return all.filter((dataset) => request.symbolCodes?.includes(dataset.symbolCode));
+    const symbolSet = new Set<SymbolCode>(requestedSymbols);
+    return all.filter((dataset) => symbolSet.has(dataset.symbolCode));
   }
 
   private persist(runId: RunId, state: ReplayState, status: RunSummary['status']): void {
@@ -182,8 +268,9 @@ export class ReplayApiService {
       netPnl: state.closedTradesSummary.netPnl,
     };
 
-    this.runHistoryRepository.saveRunSummary(summary);
-    this.runHistoryRepository.saveRunDetail({
+    try {
+      this.runHistoryRepository.saveRunSummary(summary);
+      this.runHistoryRepository.saveRunDetail({
       summary,
       replayState: state,
       tradeSummaries: state.openTrades.map((trade) => ({
@@ -210,7 +297,11 @@ export class ReplayApiService {
           return acc;
         }, {} as Record<string, number>),
         latestEventTs: state.recentTimelineEvents.at(-1)?.ts,
-      },
-    });
+      }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown_replay_persistence_error';
+      throw new Error(`Replay persistence failed for run ${runId}: ${message}`);
+    }
   }
 }

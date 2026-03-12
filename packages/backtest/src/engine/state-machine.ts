@@ -6,7 +6,7 @@ import {
   executeFill,
   type FillSimulatorConfig,
   resolveIntraBarHit
-} from '../fills/fill-simulator.stub.js';
+} from '../fills/fill-simulator.js';
 import type { LifecycleTransition, LifecycleTransitionReason, TradeLifecycleState } from '../types/trade-lifecycle.js';
 import type { SimulatedOrder, SimulatedTrade } from '../types/simulated-trade.js';
 

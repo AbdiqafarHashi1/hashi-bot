@@ -26,6 +26,51 @@ interface ReplayRunSession {
   status: RunStatus;
 }
 
+
+function sanitizeReplaySpeed(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.min(100, Math.max(0.1, value));
+}
+
+function normalizeSymbolCodes(symbols?: SymbolCode[]): SymbolCode[] | undefined {
+  if (!symbols || symbols.length === 0) {
+    return undefined;
+  }
+  const unique = Array.from(new Set(symbols.filter((item) => typeof item === 'string' && item.trim().length > 0)));
+  return unique.length > 0 ? unique : undefined;
+}
+
+function validateReplayAction(action: ReplayControlAction): void {
+  switch (action.type) {
+    case 'step':
+      if (action.steps !== undefined && (!Number.isFinite(action.steps) || action.steps < 1)) {
+        throw new Error('Replay step action requires steps >= 1.');
+      }
+      return;
+    case 'jump_to_index':
+      if (!Number.isFinite(action.barIndex) || action.barIndex < 0) {
+        throw new Error('Replay jump_to_index requires barIndex >= 0.');
+      }
+      return;
+    case 'jump_to_timestamp':
+      if (!Number.isFinite(action.timestamp) || action.timestamp < 0) {
+        throw new Error('Replay jump_to_timestamp requires timestamp >= 0.');
+      }
+      return;
+    case 'set_speed':
+      if (!Number.isFinite(action.speed) || action.speed <= 0) {
+        throw new Error('Replay set_speed requires speed > 0.');
+      }
+      return;
+    case 'play':
+    case 'pause':
+    case 'reset':
+      return;
+  }
+}
+
 function assertNever(value: never): never {
   throw new Error(`Unhandled replay action: ${String(value)}`);
 }
@@ -44,9 +89,11 @@ export class ReplayService {
       throw new Error('No datasets available for replay run creation');
     }
 
-    const symbols = params.symbolCodes?.length
-      ? params.symbolCodes
+    const requestedSymbols = normalizeSymbolCodes(params.symbolCodes);
+    const symbols = requestedSymbols?.length
+      ? requestedSymbols
       : datasets.map((dataset) => dataset.symbolCode);
+    const symbolSet = new Set<SymbolCode>(symbols);
 
     const runId = params.runId ?? createRunId();
     const config: ReplayRunConfig = {
@@ -59,7 +106,7 @@ export class ReplayService {
         symbols,
         primarySymbol: symbols[0],
       },
-      replaySpeed: params.replaySpeed ?? 1,
+      replaySpeed: sanitizeReplaySpeed(params.replaySpeed),
       maxTimelineEvents: 300,
     };
 
@@ -67,7 +114,7 @@ export class ReplayService {
     const symbolSpecsBySymbol: Record<string, NonNullable<ReturnType<DatasetRepository['getSymbol']>>> = {};
 
     for (const dataset of datasets) {
-      if (!symbols.includes(dataset.symbolCode)) {
+      if (!symbolSet.has(dataset.symbolCode)) {
         continue;
       }
 
@@ -136,6 +183,11 @@ export class ReplayService {
   }
 
   controlReplay(runId: RunId, action: ReplayControlAction): ReplayStepResult {
+    if (!String(runId).trim()) {
+      throw new Error('Replay control requires a valid runId.');
+    }
+    validateReplayAction(action);
+
     const session = this.mustGetSession(runId);
 
     switch (action.type) {
@@ -182,11 +234,13 @@ export class ReplayService {
     }
 
     const allDatasets = this.datasetRepository.listDatasets();
-    if (!params.symbolCodes?.length) {
+    const requestedSymbols = normalizeSymbolCodes(params.symbolCodes);
+    if (!requestedSymbols?.length) {
       return allDatasets;
     }
 
-    return allDatasets.filter((dataset) => params.symbolCodes?.includes(dataset.symbolCode));
+    const symbolSet = new Set<SymbolCode>(requestedSymbols);
+    return allDatasets.filter((dataset) => symbolSet.has(dataset.symbolCode));
   }
 
   private mustGetSession(runId: RunId): ReplayRunSession {

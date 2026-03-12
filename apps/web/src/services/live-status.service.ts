@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import type { EmergencyCommandType, ExecutionVenue } from '@hashi-bot/core';
+import { parseExecutionVenue, type EmergencyCommandType, type ExecutionVenue } from '@hashi-bot/core';
 import type { DatasetRepository } from '@hashi-bot/data';
 import {
   CcxtExecutionAdapter,
@@ -99,6 +99,14 @@ interface PersistedRuntimeSafetyState {
   }[];
 }
 
+type CcxtMarketType = 'spot' | 'swap' | 'future' | 'margin';
+
+const CCXT_MARKET_TYPES: readonly CcxtMarketType[] = ['spot', 'swap', 'future', 'margin'];
+
+function parseCcxtMarketType(value: string | undefined): CcxtMarketType {
+  return value && CCXT_MARKET_TYPES.includes(value as CcxtMarketType) ? (value as CcxtMarketType) : 'spot';
+}
+
 export interface LiveSafetyResponse {
   status: 'ok' | 'unavailable';
   venue: ExecutionVenue;
@@ -151,7 +159,7 @@ function buildExecutionAdapter(datasetRepository: DatasetRepository, config: Liv
         secret: vars.CCXT_API_SECRET ?? '',
         password: vars.CCXT_API_PASSWORD,
         sandbox: vars.CCXT_SANDBOX === 'true',
-        marketType: (vars.CCXT_MARKET_TYPE as 'spot' | 'swap' | 'future' | 'margin' | undefined) ?? 'spot',
+        marketType: parseCcxtMarketType(vars.CCXT_MARKET_TYPE),
         symbolSpecs: symbols
       }),
       notes
@@ -192,8 +200,8 @@ export class LiveStatusService {
   public constructor(datasetRepository: DatasetRepository) {
     const vars = env();
     this.accountRef = vars.LIVE_ACCOUNT_REF ?? 'paper-account';
-    this.mode = (vars.WORKER_MODE === 'live' ? 'live' : 'paper') as 'paper' | 'live';
-    this.venue = (vars.EXECUTION_VENUE ?? 'mock') as ExecutionVenue;
+    this.mode = vars.WORKER_MODE === 'live' ? 'live' : 'paper';
+    this.venue = parseExecutionVenue(vars.EXECUTION_VENUE);
 
     const built = buildExecutionAdapter(datasetRepository, {
       accountRef: this.accountRef,
@@ -321,8 +329,8 @@ export class LiveStatusService {
         incidents: health.latestIncident ? [health.latestIncident] : [],
         notes: [
           ...this.notes,
-          runtimeState ? 'Runtime incident summary is available in /api/live/safety.' : 'Runtime safety state file not found.',
-          'Incidents endpoint returns adapter-level latest incident visibility only.'
+          runtimeState ? 'Runtime incident summary is available via /api/live/safety for cross-checking.' : 'Runtime safety state file is unavailable; incident context may be partial.',
+          'Incidents endpoint is adapter-scoped and may not include full worker recovery history.'
         ]
       };
     } catch (error) {
@@ -390,10 +398,10 @@ export class LiveStatusService {
       accountRef: this.accountRef,
       mode: this.mode,
       command,
-      message: 'Web runtime does not directly control worker execution. Command visibility is API-level only in this architecture.',
+      message: 'Emergency command accepted for visibility only. Web runtime does not execute worker control actions directly.',
       notes: [
         ...this.notes,
-        'This endpoint is intentionally non-executing in current architecture to avoid fake or unsafe control-plane behavior.',
+        'This endpoint is intentionally non-executing to avoid unsafe or misleading control-plane behavior in web runtime.',
         'Use worker startup/recovery and operational control flow for real emergency execution.'
       ]
     };

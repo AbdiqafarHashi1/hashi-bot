@@ -44,6 +44,7 @@ export class FoundationPagesService {
         latestQualifiedSignals: [],
         bestSignal: null,
         ranking: [],
+        emptyStateMessage: 'No qualified signals are currently available. Verify snapshots/config inputs before treating this as strategy inactivity.'
       };
     }
 
@@ -55,118 +56,170 @@ export class FoundationPagesService {
       ranking: (signals.ranking ?? []).slice(0, 5),
       symbolsEvaluated: signals.symbolsEvaluated,
       unqualifiedSummary: signals.unqualifiedSummary,
+      emptyStateMessage: signals.qualifiedSignals.length === 0
+        ? 'All current candidates were filtered out by strategy conditions (see unqualifiedSummary).' 
+        : undefined
     };
   }
 
   async getOverviewPage(): Promise<FoundationPage> {
     const config = this.queryService.getConfig();
     const signals = this.buildSignalSummary();
-    const backtestRuns = this.instantBacktestService.listRuns();
-    const replayRuns = this.replayApiService.listRuns();
+    const backtestRuns = this.instantBacktestService.listRuns({ limit: 50 });
+    const replayRuns = this.replayApiService.listRuns({ limit: 50 });
     const live = await this.liveStatusService.getLiveState();
 
     return {
       path: '/',
-      title: 'Hashi Bot Phase 7 Operational Safety Center',
-      subtitle: 'Replay, backtest, and guarded live operation visibility with explicit operational safety state.',
+      title: 'Hashi Bot Operations Console',
+      subtitle: 'Operator-first visibility for replay, backtest, and guarded paper/live workflows.',
       readiness: 'phase5_ready',
       sections: [
-        createSection('capabilities', 'Capability Availability', 'Current mode support and latest run availability.', {
+        createSection('capabilities', 'Mode & Run Readiness', 'Current mode support, run availability, and active execution context.', {
           replay: { enabled: config.supports.replay, runCount: replayRuns.runs.length },
           backtest: { enabled: config.supports.backtest, runCount: backtestRuns.runs.length },
           instantRuns: { enabled: true },
-          liveExecutionFoundation: {
-            enabled: true,
+          liveExecution: {
             status: live.status,
+            mode: live.mode,
             venue: live.venue,
             accountRef: live.accountRef,
             adapterReady: live.adapterReady
-          }
+          },
+          modeReminder: 'Use replay/backtest for deterministic validation. Treat live/paper endpoints as runtime visibility, not simulated guarantees.'
         }),
-        createSection('signals', 'Signal Snapshot', 'Current ranked signal snapshot from strategy evaluation service.', signals),
+        createSection('signals', 'Signals (Top Candidates)', 'Top ranked signal candidates with qualification context and filtering visibility.', signals),
+        createSection('runs', 'Runs & Trades Navigation', 'Fast links for run/trade investigation workflows.', {
+          runs: {
+            replay: replayRuns.runs.length,
+            backtest: backtestRuns.runs.length
+          },
+          operatorPaths: {
+            replayRuns: '/replay',
+            backtestRuns: '/backtest',
+            signals: '/api/signals',
+            safety: '/live'
+          },
+          emptyStateGuidance: 'If run counts are zero, execute smoke flows before enabling broader operational checks.'
+        }),
         createSection('platform', 'Platform Summary', 'Supported modes, venues, and profile codes.', this.getPlatformSummary()),
-        createSection('operational_safety', 'Operational Safety Support', 'Phase 7 introduces watchdogs, lockouts, guarded startup recovery, and emergency workflows.', {
+        createSection('operational_safety', 'Safety Coverage', 'Watchdogs, lockouts, startup recovery, and emergency-control transparency.', {
           startupRecovery: 'supported',
           watchdogHealth: 'supported',
           killSwitchLockout: 'supported',
           emergencyWorkflows: ['cancel_all_orders', 'flatten_positions', 'disable_live_mode'],
-          honestyNote: 'Safety API reflects real runtime persistence when available, otherwise explicit fallback/unavailable status is returned.'
+          honestyNote: 'Safety payloads remain explicit about runtime-file vs fallback sources; no synthetic success state is reported.'
         })
       ],
     };
   }
 
   getReplayPage(): FoundationPage {
-    const runs = this.replayApiService.listRuns();
+    const runs = this.replayApiService.listRuns({ limit: 100 });
 
     return {
       path: '/replay',
-      title: 'Replay Control',
-      subtitle: 'Replay run controls and state visibility.',
+      title: 'Replay Runs & Controls',
+      subtitle: 'Deterministic replay controls with clear run-state visibility and safe isolation from live execution.',
       readiness: 'phase5_ready',
       sections: [
-        createSection('runs', 'Replay Runs', 'Known replay runs from in-memory history repository.', runs.runs),
-        createSection('notes', 'Replay Notes', 'Replay controls remain deterministic and isolated from live execution.', {
+        createSection('runs', 'Replay Runs', 'Replay run list with current status and metadata.', {
+          status: runs.status,
+          items: runs.runs,
+          count: runs.runs.length,
+          emptyStateMessage: runs.runs.length === 0 ? 'No replay runs found. Start with `pnpm smoke:replay` or POST /api/replay.' : undefined
+        }),
+        createSection('controls', 'Replay Control Endpoints', 'Route templates for route-level replay control workflows.', {
           controlEndpointTemplate: '/api/replay/{runId}/control',
-          detailEndpointTemplate: '/api/replay/{runId}'
+          detailEndpointTemplate: '/api/replay/{runId}',
+          controlActions: ['step', 'play', 'pause', 'jump_to_index', 'jump_to_timestamp', 'set_speed', 'reset']
+        }),
+        createSection('operator_notes', 'Replay Operator Notes', 'Guidance for confidence and edge-case handling.', {
+          notes: [
+            'Replay is the preferred workflow for timeline-level trade lifecycle debugging.',
+            'If run status is unavailable, validate dataset presence and replay launch payload first.',
+            'Replay remains isolated from live order placement by design.'
+          ]
         })
       ]
     };
   }
 
   getBacktestPage(): FoundationPage {
-    const runs = this.instantBacktestService.listRuns();
+    const runs = this.instantBacktestService.listRuns({ limit: 100 });
 
     return {
       path: '/backtest',
-      title: 'Backtest Runs',
-      subtitle: 'Instant backtest run history and config visibility.',
+      title: 'Backtest Runs & Trade Outcomes',
+      subtitle: 'Backtest run history with trade-centric review context and default assumptions.',
       readiness: 'phase5_ready',
       sections: [
-        createSection('runs', 'Backtest Runs', 'Backtest run summaries from repository.', runs.runs),
+        createSection('runs', 'Backtest Runs', 'Backtest run summaries from repository.', {
+          status: runs.status,
+          items: runs.runs,
+          count: runs.runs.length,
+          emptyStateMessage: runs.runs.length === 0 ? 'No backtest runs found. Start with `pnpm smoke:backtest` or POST /api/backtests.' : undefined
+        }),
+        createSection('trades', 'Trades Review Hints', 'How to read trade outcomes and avoid common misreads.', {
+          notes: [
+            'Use netPnL and win-rate together; avoid judging strategy health from one run.',
+            'Review setupCode and lifecycle transitions to explain outlier trades.',
+            'For deterministic bar-by-bar investigation, move to replay for the same symbol/timeframe.'
+          ]
+        }),
         createSection('defaults', 'Backtest Defaults', 'Default backtest assumptions for instant runs.', this.queryService.getBacktestConfigs())
       ]
     };
   }
 
   async getLivePage(): Promise<FoundationPage> {
-    const live = await this.liveStatusService.getLiveState();
-    const health = await this.liveStatusService.getHealth();
-    const orders = await this.liveStatusService.getOrders();
-    const positions = await this.liveStatusService.getPositions();
-    const incidents = await this.liveStatusService.getIncidents();
-    const safety = await this.liveStatusService.getSafety();
+    const [live, health, orders, positions, incidents, safety] = await Promise.all([
+      this.liveStatusService.getLiveState(),
+      this.liveStatusService.getHealth(),
+      this.liveStatusService.getOrders(),
+      this.liveStatusService.getPositions(),
+      this.liveStatusService.getIncidents(),
+      this.liveStatusService.getSafety()
+    ]);
 
     return {
       path: '/live',
-      title: 'Live Operational Safety',
-      subtitle: 'Operational visibility into health, watchdog/lockout state, recovery status, incidents, and emergency controls.',
+      title: 'Live / Paper Safety Console',
+      subtitle: 'Runtime health, safety state, incidents, and emergency-control visibility for operator decisions.',
       readiness: 'phase5_ready',
       sections: [
-        createSection('venue_summary', 'Venue + Account Summary', 'Selected execution venue and account visibility.', {
+        createSection('venue_summary', 'Mode + Venue Summary', 'Current mode distinction and execution context.', {
           status: live.status,
           mode: live.mode,
           venue: live.venue,
           accountRef: live.accountRef,
           adapterReady: live.adapterReady,
-          latestSyncTs: live.latestSyncTs
+          latestSyncTs: live.latestSyncTs,
+          modeWarning: live.mode === 'live' ? 'Live mode is active. Treat lockout/incident states as immediate operational blockers.' : 'Paper mode active. Use this mode before any live rollout changes.'
         }),
-        createSection('health', 'Execution Health', 'Current adapter health and incident counters.', health),
-        createSection('safety', 'Safety + Lockout State', 'Watchdog/lockout/recovery visibility from runtime state when available.', safety),
-        createSection('orders', 'Open Orders', 'Venue open orders from latest sync.', orders),
-        createSection('positions', 'Open Positions', 'Venue open positions from latest sync.', positions),
-        createSection('incidents', 'Recent Incidents', 'Recent execution incidents available from current adapter context.', incidents),
-        createSection('emergency_controls', 'Emergency Control Visibility', 'Emergency endpoint visibility and architecture honesty notes.', {
+        createSection('health', 'Execution Health', 'Adapter health status and incident counters.', health),
+        createSection('safety', 'Safety State (Watchdog + Lockout)', 'Safety source, lockout controls, and recovery status.', safety),
+        createSection('orders', 'Open Orders', 'Open order table source and sync timestamp.', {
+          ...orders,
+          emptyStateMessage: orders.status === 'ok' && orders.orders.length === 0 ? 'No open orders at last sync.' : undefined
+        }),
+        createSection('positions', 'Open Positions', 'Open positions and latest sync information.', {
+          ...positions,
+          emptyStateMessage: positions.status === 'ok' && positions.positions.length === 0 ? 'No open positions at last sync.' : undefined
+        }),
+        createSection('incidents', 'Incident Feed', 'Recent adapter-level incidents and safety references.', incidents),
+        createSection('emergency_controls', 'Emergency Controls (Visibility-Only)', 'Dangerous actions are intentionally non-executing from web runtime.', {
           endpoint: 'POST /api/live/emergency',
           currentBehavior: 'visibility-only (non-executing in web runtime)',
-          rationale: 'Avoid fake control-plane behavior in web process; worker control path remains authoritative.'
+          rationale: 'Avoid fake control-plane behavior in web process; worker control path remains authoritative.',
+          operatorAction: 'Use worker recovery workflow for actual cancel/flatten/disable-live execution.'
         }),
-        createSection('path_notes', 'Venue Path Notes', 'Mock/CCXT/cTrader behavior notes and data honesty reminders.', {
+        createSection('path_notes', 'Venue Path Notes', 'Mock/CCXT/cTrader behavior notes and data-honesty reminders.', {
           notes: [
             ...live.notes,
-            'Mock path provides deterministic paper-mode visibility.',
-            'CCXT and cTrader paths require credentials/connectivity to return real venue state.',
-            'No synthetic success metrics are reported when venue data is unavailable.'
+            'Mock path is deterministic and suitable for paper-mode verification only.',
+            'CCXT and cTrader require valid credentials/connectivity for real venue state.',
+            'Unavailable responses represent real uncertainty; they are not silently converted into success states.'
           ]
         })
       ],
@@ -180,13 +233,20 @@ export class FoundationPagesService {
 
     return {
       path: '/settings',
-      title: 'Settings, Venue Notes, and Safety Reminders',
-      subtitle: 'Execution configuration visibility and operator safety reminders for guarded live operation.',
+      title: 'Settings & Operational Guardrails',
+      subtitle: 'Configuration visibility, mode distinctions, and safety reminders for release operation.',
       readiness: 'phase5_ready',
       sections: [
         createSection('profiles', 'Profiles', 'Profiles used by risk/governance and run launch payloads.', this.getPlatformSummary().profiles),
         createSection('symbols', 'Symbol Registry', 'Symbol metadata used for risk sizing and venue mapping.', symbols),
         createSection('config_notes', 'Config Source Notes', 'Current capability/config values surfaced from API layer.', config),
+        createSection('mode_distinctions', 'Mode Distinctions', 'Prevent accidental wrong-mode operation.', {
+          reminders: [
+            'Replay/backtest are deterministic validation workflows.',
+            'Paper mode should be the first runtime gate after config or code changes.',
+            'Live mode requires explicit enablement and valid non-mock venue credentials.'
+          ]
+        }),
         createSection('execution_summary', 'Execution Venue Summary', 'Current live foundation venue/account selection and sync visibility.', {
           mode: live.mode,
           venue: live.venue,
@@ -195,14 +255,29 @@ export class FoundationPagesService {
           adapterReady: live.adapterReady,
           notes: live.notes
         }),
-        createSection('safety_reminders', 'Safety Reminders', 'Guardrails for Phase 7 live safety workflow.', {
+        createSection('safety_reminders', 'Safety Reminders', 'Guardrails for live safety workflow and kill-switch handling.', {
           reminders: [
-            'Live mode should only be enabled with explicit LIVE_ENABLED=true and valid venue credentials.',
-            'Validate credentials and venue reachability before enabling non-mock execution.',
+            'Enable live only with explicit LIVE_ENABLED=true and validated venue credentials.',
+            'Treat lockout, kill-switch, or recovery-required states as hard stops until reviewed.',
             'Do not treat unavailable live API responses as successful execution state.',
             'Replay/backtest remain the deterministic verification path.',
             'Review /api/live/safety before enabling sustained live cycles; do not ignore lockout or recovery-required states.'
           ]
+        }),
+        createSection('release_checklist', 'Release Readiness Checklist', 'Lightweight operator checklist before merge/deploy/live enablement.', {
+          baseline: [
+            'pnpm verify:env',
+            'pnpm typecheck && pnpm build',
+            'pnpm verify:migrations && pnpm verify:dataset',
+            'pnpm smoke:backtest && pnpm smoke:replay && pnpm smoke:live:mock'
+          ],
+          goLive: [
+            'pnpm verify:env:worker:live',
+            'Confirm non-mock EXECUTION_VENUE and tested credentials',
+            'Set LIVE_ENABLED=true explicitly in live worker config',
+            'Confirm /api/live/safety has no lockout/recovery-required state'
+          ],
+          runbook: 'docs/runbooks/release-checklist.md'
         }),
         createSection('regime_defaults', 'Regime Threshold Notes', 'Default regime thresholds for transparent strategy context.', DEFAULT_REGIME_THRESHOLDS),
       ],
