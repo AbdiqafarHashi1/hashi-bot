@@ -1,4 +1,28 @@
-import type { BotMode, EpochMs, ExecutionVenue, IsoTimestamp, JsonValue, SymbolCode, TradeSide } from '@hashi-bot/core';
+import {
+  INCIDENT_SEVERITIES,
+  type BotMode,
+  type EmergencyCommand,
+  type EmergencyCommandResult,
+  type EpochMs,
+  type ExecutionVenue,
+  type HealthStatus,
+  type IncidentSeverity,
+  type IsoTimestamp,
+  type JsonValue,
+  type KillSwitchReason,
+  type KillSwitchState,
+  type LiveLockoutState,
+  type OperationalControlState,
+  type OperationalStatusSummary,
+  type RecoveryDecision,
+  type RecoveryState,
+  type ResumeDecision,
+  type SafetyState,
+  type SymbolCode,
+  type TradeSide,
+  type WatchdogStatus,
+  type LiveTradingLockout
+} from '@hashi-bot/core';
 
 export type VenueAccountRef = string;
 export type VenueSymbol = string;
@@ -221,8 +245,8 @@ export const LIVE_ENGINE_STATUSES = [
 ] as const;
 export type LiveEngineStatus = (typeof LIVE_ENGINE_STATUSES)[number];
 
-export const EXECUTION_INCIDENT_SEVERITIES = ['info', 'warning', 'error', 'critical'] as const;
-export type ExecutionIncidentSeverity = (typeof EXECUTION_INCIDENT_SEVERITIES)[number];
+export const EXECUTION_INCIDENT_SEVERITIES = INCIDENT_SEVERITIES;
+export type ExecutionIncidentSeverity = IncidentSeverity;
 
 export const EXECUTION_INCIDENT_CODES = [
   'sync_failure',
@@ -248,15 +272,72 @@ export interface ExecutionIncident {
   resolvedAtTs?: EpochMs;
 }
 
+
+
+export interface ExecutionKillSwitchState {
+  state: KillSwitchState;
+  reason?: KillSwitchReason;
+  activatedAtTs?: EpochMs;
+  activatedBy?: string;
+  notes?: string[];
+}
+
+export interface ExecutionRecoveryState {
+  state: RecoveryState;
+  startedAtTs?: EpochMs;
+  completedAtTs?: EpochMs;
+  pendingActions?: string[];
+  notes?: string[];
+}
+
+export interface ExecutionSafetyState {
+  safetyState: SafetyState;
+  healthStatus: HealthStatus;
+  watchdog: WatchdogStatus;
+  killSwitch: ExecutionKillSwitchState;
+  recovery: ExecutionRecoveryState;
+  liveLockout: LiveLockoutState;
+  latestRecoveryDecision?: RecoveryDecision;
+  latestResumeDecision?: ResumeDecision;
+}
+
+export interface EmergencyCommandEnvelope {
+  accountRef: VenueAccountRef;
+  venue: ExecutionVenue;
+  payload: EmergencyCommand;
+}
+
+export interface EmergencyCommandExecutionResult extends EmergencyCommandResult {
+  accountRef: VenueAccountRef;
+  venue: ExecutionVenue;
+}
+
+
+
+export interface LiveControlDecision {
+  controlState: OperationalControlState;
+  killSwitchState: KillSwitchState;
+  killSwitchReason?: KillSwitchReason;
+  lockout: LiveTradingLockout;
+  reasons: string[];
+  transitionedAtTs?: EpochMs;
+}
+
 export interface ExecutionHealthSummary {
   venue: ExecutionVenue;
   accountRef: VenueAccountRef;
   status: LiveEngineStatus;
+  safetyState?: SafetyState;
+  healthStatus?: HealthStatus;
   lastHeartbeatTs?: EpochMs;
   lastSyncTs?: EpochMs;
   openIncidentCount: number;
   criticalIncidentCount: number;
   latestIncident?: ExecutionIncident;
+  watchdog?: WatchdogStatus;
+  killSwitch?: ExecutionKillSwitchState;
+  recovery?: ExecutionRecoveryState;
+  liveLockout?: LiveLockoutState;
 }
 
 export interface LiveEngineState {
@@ -271,4 +352,7 @@ export interface LiveEngineState {
   openOrders: VenueOrder[];
   latestIncidents: ExecutionIncident[];
   health: ExecutionHealthSummary;
+  safety?: ExecutionSafetyState;
+  operationalSummary?: OperationalStatusSummary;
+  controlDecision?: LiveControlDecision;
 }

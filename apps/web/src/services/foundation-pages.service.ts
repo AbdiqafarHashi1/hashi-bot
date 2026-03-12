@@ -67,8 +67,8 @@ export class FoundationPagesService {
 
     return {
       path: '/',
-      title: 'Hashi Bot Phase 6 Control Center',
-      subtitle: 'Replay, backtest, instant runs, and live execution foundation are now visible through API-backed flows.',
+      title: 'Hashi Bot Phase 7 Operational Safety Center',
+      subtitle: 'Replay, backtest, and guarded live operation visibility with explicit operational safety state.',
       readiness: 'phase5_ready',
       sections: [
         createSection('capabilities', 'Capability Availability', 'Current mode support and latest run availability.', {
@@ -84,7 +84,14 @@ export class FoundationPagesService {
           }
         }),
         createSection('signals', 'Signal Snapshot', 'Current ranked signal snapshot from strategy evaluation service.', signals),
-        createSection('platform', 'Platform Summary', 'Supported modes, venues, and profile codes.', this.getPlatformSummary())
+        createSection('platform', 'Platform Summary', 'Supported modes, venues, and profile codes.', this.getPlatformSummary()),
+        createSection('operational_safety', 'Operational Safety Support', 'Phase 7 introduces watchdogs, lockouts, guarded startup recovery, and emergency workflows.', {
+          startupRecovery: 'supported',
+          watchdogHealth: 'supported',
+          killSwitchLockout: 'supported',
+          emergencyWorkflows: ['cancel_all_orders', 'flatten_positions', 'disable_live_mode'],
+          honestyNote: 'Safety API reflects real runtime persistence when available, otherwise explicit fallback/unavailable status is returned.'
+        })
       ],
     };
   }
@@ -128,11 +135,12 @@ export class FoundationPagesService {
     const orders = await this.liveStatusService.getOrders();
     const positions = await this.liveStatusService.getPositions();
     const incidents = await this.liveStatusService.getIncidents();
+    const safety = await this.liveStatusService.getSafety();
 
     return {
       path: '/live',
-      title: 'Live Execution Foundation',
-      subtitle: 'Operational visibility into venue/account state, sync status, health, and incidents.',
+      title: 'Live Operational Safety',
+      subtitle: 'Operational visibility into health, watchdog/lockout state, recovery status, incidents, and emergency controls.',
       readiness: 'phase5_ready',
       sections: [
         createSection('venue_summary', 'Venue + Account Summary', 'Selected execution venue and account visibility.', {
@@ -144,9 +152,15 @@ export class FoundationPagesService {
           latestSyncTs: live.latestSyncTs
         }),
         createSection('health', 'Execution Health', 'Current adapter health and incident counters.', health),
+        createSection('safety', 'Safety + Lockout State', 'Watchdog/lockout/recovery visibility from runtime state when available.', safety),
         createSection('orders', 'Open Orders', 'Venue open orders from latest sync.', orders),
         createSection('positions', 'Open Positions', 'Venue open positions from latest sync.', positions),
         createSection('incidents', 'Recent Incidents', 'Recent execution incidents available from current adapter context.', incidents),
+        createSection('emergency_controls', 'Emergency Control Visibility', 'Emergency endpoint visibility and architecture honesty notes.', {
+          endpoint: 'POST /api/live/emergency',
+          currentBehavior: 'visibility-only (non-executing in web runtime)',
+          rationale: 'Avoid fake control-plane behavior in web process; worker control path remains authoritative.'
+        }),
         createSection('path_notes', 'Venue Path Notes', 'Mock/CCXT/cTrader behavior notes and data honesty reminders.', {
           notes: [
             ...live.notes,
@@ -167,7 +181,7 @@ export class FoundationPagesService {
     return {
       path: '/settings',
       title: 'Settings, Venue Notes, and Safety Reminders',
-      subtitle: 'Execution configuration visibility and operational cautions for phase-appropriate live foundation use.',
+      subtitle: 'Execution configuration visibility and operator safety reminders for guarded live operation.',
       readiness: 'phase5_ready',
       sections: [
         createSection('profiles', 'Profiles', 'Profiles used by risk/governance and run launch payloads.', this.getPlatformSummary().profiles),
@@ -181,12 +195,13 @@ export class FoundationPagesService {
           adapterReady: live.adapterReady,
           notes: live.notes
         }),
-        createSection('safety_reminders', 'Safety Reminders', 'Guardrails while Phase 6 live foundation matures.', {
+        createSection('safety_reminders', 'Safety Reminders', 'Guardrails for Phase 7 live safety workflow.', {
           reminders: [
-            'Treat live mode as foundation-stage orchestration, not fully production-hardened execution.',
+            'Live mode should only be enabled with explicit LIVE_ENABLED=true and valid venue credentials.',
             'Validate credentials and venue reachability before enabling non-mock execution.',
             'Do not treat unavailable live API responses as successful execution state.',
-            'Replay/backtest remain the deterministic verification path.'
+            'Replay/backtest remain the deterministic verification path.',
+            'Review /api/live/safety before enabling sustained live cycles; do not ignore lockout or recovery-required states.'
           ]
         }),
         createSection('regime_defaults', 'Regime Threshold Notes', 'Default regime thresholds for transparent strategy context.', DEFAULT_REGIME_THRESHOLDS),
