@@ -15,6 +15,8 @@ import {
   getLiveOrdersRoute,
   getLivePositionsRoute,
   getLiveRoute,
+  getLiveSafetyRoute,
+  postLiveEmergencyRoute,
   getRegimeRoute,
   getReplayByIdRoute,
   getReplayRunsRoute,
@@ -85,6 +87,13 @@ export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 
       return getLivePositionsRoute();
     case '/api/live/incidents':
       return getLiveIncidentsRoute();
+    case '/api/live/safety':
+      return getLiveSafetyRoute();
+    case '/api/live/emergency':
+      if (method === 'POST') {
+        return postLiveEmergencyRoute((body ?? {}) as Parameters<typeof postLiveEmergencyRoute>[0]);
+      }
+      return { error: 'method_not_allowed', path, allowed: ['POST'] };
     default:
       return { error: 'not_found', path };
   }

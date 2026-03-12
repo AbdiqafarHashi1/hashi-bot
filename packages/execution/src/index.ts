@@ -14,4 +14,12 @@ export * from './incidents/incident-model.js';
 export * from './incidents/incident-classifier.js';
 export * from './incidents/incident-telemetry.js';
 
+export * from './health/watchdog.service.js';
+export * from './health/health-evaluation.service.js';
+export * from './health/kill-switch.controller.js';
+export * from './health/health-telemetry.js';
+
+export * from './operations/emergency-operations.service.js';
+export * from './recovery/restart-recovery.service.js';
+
 export * from './adapters/index.js';

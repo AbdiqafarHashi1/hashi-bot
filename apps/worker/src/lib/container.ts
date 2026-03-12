@@ -3,8 +3,10 @@ import {
   InMemoryBacktestRunRepository,
   InMemoryDatasetRepository,
   InMemoryRunHistoryRepository,
+  InMemoryLiveOperationsRepository,
   type BacktestRunRepository,
   type DatasetRepository,
+  type LiveOperationsRepository,
   type RunHistoryRepository
 } from '@hashi-bot/data';
 import {
@@ -13,13 +15,21 @@ import {
   MockExecutionAdapter,
   type ExecutionAdapter
 } from '@hashi-bot/execution';
-import { InMemoryIncidentSink, type TelemetryIncidentSink } from '@hashi-bot/telemetry';
+import {
+  InMemoryEmergencyCommandSink,
+  InMemoryIncidentSink,
+  type TelemetryEmergencyCommandSink,
+  type TelemetryIncidentSink
+} from '@hashi-bot/telemetry';
 
 import { EvaluationService } from '../services/evaluation-service.js';
 import { BacktestService } from '../services/backtest-service.js';
 import { BacktestSignalService } from '../services/backtest-signal.service.js';
 import { ReplayService } from '../services/replay-service.js';
 import { LiveExecutionService } from '../services/live-execution.service.js';
+import { WorkerRestartRecoveryService } from '../services/restart-recovery.service.js';
+import { LiveSafetyRailsService } from '../services/live-safety-rails.service.js';
+import { FileLiveStateStore } from './live-state-store.js';
 
 export interface WorkerContainer {
   datasetRepository: DatasetRepository;
@@ -31,7 +41,12 @@ export interface WorkerContainer {
   replayService: ReplayService;
   executionAdapter: ExecutionAdapter;
   incidentSink: TelemetryIncidentSink;
+  emergencyCommandSink: TelemetryEmergencyCommandSink;
   liveExecutionService: LiveExecutionService;
+  liveStateStore: FileLiveStateStore;
+  restartRecoveryService: WorkerRestartRecoveryService;
+  liveSafetyRailsService: LiveSafetyRailsService;
+  liveOperationsRepository: LiveOperationsRepository;
 }
 
 function env(): Record<string, string | undefined> {
@@ -81,6 +96,9 @@ export function createWorkerContainer(): WorkerContainer {
   const executionAdapter = buildExecutionAdapter(datasetRepository);
   const incidentSink = new InMemoryIncidentSink();
   const evaluationService = new EvaluationService(datasetRepository);
+  const emergencyCommandSink = new InMemoryEmergencyCommandSink();
+  const liveStateStore = FileLiveStateStore.fromEnv();
+  const liveOperationsRepository = new InMemoryLiveOperationsRepository();
 
   return {
     datasetRepository,
@@ -92,6 +110,17 @@ export function createWorkerContainer(): WorkerContainer {
     replayService: new ReplayService(datasetRepository, runHistoryRepository),
     executionAdapter,
     incidentSink,
-    liveExecutionService: new LiveExecutionService(evaluationService, datasetRepository, executionAdapter, incidentSink)
+    emergencyCommandSink,
+    liveExecutionService: new LiveExecutionService(
+      evaluationService,
+      datasetRepository,
+      executionAdapter,
+      incidentSink,
+      emergencyCommandSink
+    ),
+    liveStateStore,
+    restartRecoveryService: new WorkerRestartRecoveryService(executionAdapter, liveStateStore),
+    liveSafetyRailsService: new LiveSafetyRailsService(executionAdapter),
+    liveOperationsRepository
   };
 }

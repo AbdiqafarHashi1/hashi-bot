@@ -1,4 +1,7 @@
-import type { ExecutionVenue } from '@hashi-bot/core';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+import type { EmergencyCommandType, ExecutionVenue } from '@hashi-bot/core';
 import type { DatasetRepository } from '@hashi-bot/data';
 import {
   CcxtExecutionAdapter,
@@ -62,8 +65,75 @@ export interface LiveIncidentsResponse {
   notes: string[];
 }
 
+interface PersistedRuntimeSafetyState {
+  savedAtTs?: number;
+  accountRef?: string;
+  venue?: string;
+  healthStatus?: string;
+  recoveryState?: string;
+  lastControlState?: string;
+  incidentSummary?: {
+    asOfTs?: number;
+    totalOpenIncidents?: number;
+    criticalIncidentCount?: number;
+    latestIncidentMessage?: string;
+  };
+  lockout?: {
+    asOfTs?: number;
+    controlState?: string;
+    blockNewOrderPlacement?: boolean;
+    blockVenueTrading?: boolean;
+    blockLiveMode?: boolean;
+    reasons?: string[];
+  };
+  recoveryNotes?: { notedAtTs?: number; message?: string; recoveryState?: string; decision?: { outcome?: string } }[];
+  emergencyHistory?: {
+    commandId?: string;
+    command?: string;
+    accepted?: boolean;
+    completed?: boolean;
+    message?: string;
+    errorCode?: string;
+    receivedAtTs?: number;
+    completedAtTs?: number;
+  }[];
+}
+
+export interface LiveSafetyResponse {
+  status: 'ok' | 'unavailable';
+  venue: ExecutionVenue;
+  accountRef: string;
+  mode: 'paper' | 'live';
+  safety: {
+    source: 'runtime_state_file' | 'adapter_health_fallback';
+    healthStatus: string;
+    controlState?: string;
+    recoveryState?: string;
+    lockout?: PersistedRuntimeSafetyState['lockout'];
+    incidentSummary?: PersistedRuntimeSafetyState['incidentSummary'];
+    recoveryNotes: PersistedRuntimeSafetyState['recoveryNotes'];
+    emergencyHistory: PersistedRuntimeSafetyState['emergencyHistory'];
+    lastUpdatedTs?: number;
+  };
+  notes: string[];
+}
+
+export interface LiveEmergencyResponse {
+  status: 'accepted_for_visibility' | 'unavailable';
+  venue: ExecutionVenue;
+  accountRef: string;
+  mode: 'paper' | 'live';
+  command: EmergencyCommandType;
+  message: string;
+  notes: string[];
+}
+
 function env(): Record<string, string | undefined> {
   return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+}
+
+function runtimeStatePath(): string {
+  return resolve(env().WORKER_LIVE_STATE_PATH ?? '.runtime/worker-live-state.json');
 }
 
 function buildExecutionAdapter(datasetRepository: DatasetRepository, config: LiveStatusServiceConfig): { adapter: ExecutionAdapter; notes: string[] } {
@@ -240,6 +310,8 @@ export class LiveStatusService {
   }
 
   public async getIncidents(): Promise<LiveIncidentsResponse> {
+    const runtimeState = await this.readRuntimeState();
+
     try {
       const health = await this.adapter.getHealth(this.accountRef, { withSync: false });
       return {
@@ -249,7 +321,8 @@ export class LiveStatusService {
         incidents: health.latestIncident ? [health.latestIncident] : [],
         notes: [
           ...this.notes,
-          'Incidents are adapter-level recent events; historical persistence is not wired yet in web runtime.'
+          runtimeState ? 'Runtime incident summary is available in /api/live/safety.' : 'Runtime safety state file not found.',
+          'Incidents endpoint returns adapter-level latest incident visibility only.'
         ]
       };
     } catch (error) {
@@ -260,6 +333,78 @@ export class LiveStatusService {
         incidents: [],
         notes: [...this.notes, this.errorMessage(error)]
       };
+    }
+  }
+
+  public async getSafety(): Promise<LiveSafetyResponse> {
+    const runtimeState = await this.readRuntimeState();
+
+    if (runtimeState) {
+      return {
+        status: 'ok',
+        venue: this.venue,
+        accountRef: this.accountRef,
+        mode: this.mode,
+        safety: {
+          source: 'runtime_state_file',
+          healthStatus: runtimeState.healthStatus ?? 'unknown',
+          controlState: runtimeState.lastControlState,
+          recoveryState: runtimeState.recoveryState,
+          lockout: runtimeState.lockout,
+          incidentSummary: runtimeState.incidentSummary,
+          recoveryNotes: runtimeState.recoveryNotes ?? [],
+          emergencyHistory: runtimeState.emergencyHistory ?? [],
+          lastUpdatedTs: runtimeState.savedAtTs
+        },
+        notes: [
+          ...this.notes,
+          'Safety payload is sourced from worker runtime persistence and may lag current venue state between loop cycles.'
+        ]
+      };
+    }
+
+    const health = await this.getHealth();
+    return {
+      status: health.status,
+      venue: this.venue,
+      accountRef: this.accountRef,
+      mode: this.mode,
+      safety: {
+        source: 'adapter_health_fallback',
+        healthStatus: health.health.status,
+        recoveryNotes: [],
+        emergencyHistory: [],
+        lastUpdatedTs: health.health.lastHeartbeatTs
+      },
+      notes: [
+        ...health.notes,
+        'Runtime safety file unavailable; returning adapter health fallback only.'
+      ]
+    };
+  }
+
+  public async executeEmergency(command: EmergencyCommandType): Promise<LiveEmergencyResponse> {
+    return {
+      status: 'accepted_for_visibility',
+      venue: this.venue,
+      accountRef: this.accountRef,
+      mode: this.mode,
+      command,
+      message: 'Web runtime does not directly control worker execution. Command visibility is API-level only in this architecture.',
+      notes: [
+        ...this.notes,
+        'This endpoint is intentionally non-executing in current architecture to avoid fake or unsafe control-plane behavior.',
+        'Use worker startup/recovery and operational control flow for real emergency execution.'
+      ]
+    };
+  }
+
+  private async readRuntimeState(): Promise<PersistedRuntimeSafetyState | undefined> {
+    try {
+      const raw = await readFile(runtimeStatePath(), 'utf8');
+      return JSON.parse(raw) as PersistedRuntimeSafetyState;
+    } catch {
+      return undefined;
     }
   }
 

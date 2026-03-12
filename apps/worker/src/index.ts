@@ -6,6 +6,7 @@ import { runBacktestLoop } from './loops/backtest.loop.js';
 import { runEvaluationLoop } from './loops/evaluation.loop.js';
 import { runLiveLoop } from './loops/live.loop.js';
 import { runReplayLoop } from './loops/replay.loop.js';
+import { buildRecoveryEmergencyCommands } from './services/operational-guard.service.js';
 
 function parseWatchlist(raw: string | undefined): SymbolCode[] | undefined {
   if (!raw) {
@@ -48,7 +49,15 @@ async function main(): Promise<void> {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
   const datasetId = env.DATASET_ID;
   const workerMode = env.WORKER_MODE ?? 'evaluation';
-  const { container } = bootstrapWorker();
+  const accountRef = env.LIVE_ACCOUNT_REF ?? 'paper-account';
+  const staleAfterMs = env.LIVE_STALE_AFTER_MS == null ? 60_000 : Number(env.LIVE_STALE_AFTER_MS);
+
+  const { container, startupRecovery } = await bootstrapWorker({
+    mode: workerMode,
+    accountRef,
+    staleAfterMs,
+    env
+  });
 
   if (workerMode === 'backtest') {
     runBacktestLoop(container, datasetId);
@@ -70,13 +79,19 @@ async function main(): Promise<void> {
   if (workerMode === 'live' || workerMode === 'paper') {
     await runLiveLoop(container, {
       mode: workerMode,
-      accountRef: env.LIVE_ACCOUNT_REF ?? 'paper-account',
+      accountRef,
       profileCode: (env.LIVE_PROFILE as ProfileCode | undefined) ?? 'PROP_HUNTER',
       watchlistSymbolCodes: parseWatchlist(env.WATCHLIST_SYMBOLS),
       rankingLimit: env.RANKING_LIMIT == null ? undefined : Number(env.RANKING_LIMIT),
-      staleAfterMs: env.LIVE_STALE_AFTER_MS == null ? 60_000 : Number(env.LIVE_STALE_AFTER_MS),
+      staleAfterMs,
       maxCycles: env.LIVE_MAX_CYCLES == null ? 1 : Number(env.LIVE_MAX_CYCLES),
-      cycleDelayMs: env.LIVE_CYCLE_DELAY_MS == null ? 0 : Number(env.LIVE_CYCLE_DELAY_MS)
+      cycleDelayMs: env.LIVE_CYCLE_DELAY_MS == null ? 0 : Number(env.LIVE_CYCLE_DELAY_MS),
+      startupRecovery,
+      startupEmergencyCommands: buildRecoveryEmergencyCommands({
+        outcome: startupRecovery?.decision.outcome,
+        nowTs: Date.now() as EpochMs,
+        issuedBy: 'startup_recovery'
+      })
     });
     return;
   }

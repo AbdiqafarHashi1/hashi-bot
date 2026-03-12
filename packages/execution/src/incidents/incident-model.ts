@@ -1,4 +1,4 @@
-import type { EpochMs, ExecutionVenue, JsonValue, SymbolCode } from '@hashi-bot/core';
+import type { EpochMs, ExecutionVenue, IncidentSeverity, JsonValue, SymbolCode } from '@hashi-bot/core';
 
 export const EXECUTION_INCIDENT_TYPES = [
   'auth_config_failure',
@@ -20,7 +20,7 @@ export interface ExecutionIncidentRecord {
   venue: ExecutionVenue;
   accountRef: string;
   type: ExecutionIncidentType;
-  severity: 'info' | 'warning' | 'error' | 'critical';
+  severity: IncidentSeverity;
   message: string;
   symbolCode?: SymbolCode;
   relatedRef?: string;

@@ -1,4 +1,5 @@
 import type { InstantBacktestRequest, ReplayControlAction } from '@hashi-bot/backtest';
+import type { EmergencyCommandType } from '@hashi-bot/core';
 import type { ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
 
 import { createWebContainer } from '../lib/container.js';
@@ -91,4 +92,12 @@ export async function getLivePositionsRoute() {
 
 export async function getLiveIncidentsRoute() {
   return liveStatusService.getIncidents();
+}
+
+export async function getLiveSafetyRoute() {
+  return liveStatusService.getSafety();
+}
+
+export async function postLiveEmergencyRoute(payload: { command?: EmergencyCommandType }) {
+  return liveStatusService.executeEmergency(payload.command ?? 'acknowledge_incident');
 }
