@@ -12,6 +12,8 @@ Use this checklist before merge/deploy and before any live-mode enablement.
   - Command: `pnpm verify:env:worker:paper`
 - [ ] Typecheck passes.
   - Command: `pnpm typecheck`
+- [ ] Lint passes.
+  - Command: `pnpm lint`
 - [ ] Build passes.
   - Command: `pnpm build`
 - [ ] Migrations are present/ready (or explicit N/A in repo snapshot).

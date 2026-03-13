@@ -25,6 +25,7 @@ Use `docs/runbooks/release-checklist.md` as the pre-merge/pre-deploy gate docume
 
 - `WORKER_MODE` must be explicit in production.
 - `WORKER_MODE=live` requires:
+  - `LIVE_ENGINE_ENABLED=true`
   - `LIVE_ENABLED=true`
   - non-mock `EXECUTION_VENUE`
   - venue credentials for selected adapter
