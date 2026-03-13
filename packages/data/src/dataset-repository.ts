@@ -161,7 +161,9 @@ function parseCsvDataset(filePath: string, datasetId: string, symbolCode: Symbol
     throw new Error('Dataset CSV header row is missing.');
   }
 
-  const headers = headerLine.split(',').map((item) => item.trim().toLowerCase());
+  const headers = headerLine
+    .split(',')
+    .map((item) => item.trim().replace(/^\uFEFF/, '').toLowerCase());
 
   const tsIndex = getHeaderIndex(headers, ['ts', 'timestamp', 'time', 'open_time', 'datetime', 'date']);
   const openIndex = getHeaderIndex(headers, ['open', 'o']);
@@ -183,7 +185,9 @@ function parseCsvDataset(filePath: string, datasetId: string, symbolCode: Symbol
       continue;
     }
 
-    const cells = line.split(',').map((item) => item.trim());
+    const cells = line
+      .split(',')
+      .map((item) => item.trim().replace(/^\uFEFF/, ''));
     if (!cells.length || cells.every((cell) => !cell)) {
       continue;
     }

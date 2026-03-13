@@ -25,7 +25,8 @@ const result = spawnSync('pnpm', ['tsx', 'apps/worker/src/index.ts'], {
   env: {
     ...process.env,
     WORKER_MODE: 'backtest',
-    DATASET_ID: datasetId
+    DATASET_ID: datasetId,
+    BACKTEST_MAX_CANDLES: process.env.BACKTEST_MAX_CANDLES ?? '2000'
   }
 });
 
