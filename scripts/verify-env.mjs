@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 
 const argv = process.argv.slice(2);
 
