@@ -61,7 +61,12 @@ const tsxBin = process.platform === 'win32'
   ? path.resolve('node_modules', '.bin', 'tsx.cmd')
   : path.resolve('node_modules', '.bin', 'tsx');
 
-const result = spawnSync(tsxBin, ['-e', checkCode], {
+const command = process.platform === 'win32' ? 'cmd.exe' : tsxBin;
+const args = process.platform === 'win32'
+  ? ['/d', '/s', '/c', `"${tsxBin}" -e ${JSON.stringify(checkCode)}`]
+  : ['-e', checkCode];
+
+const result = spawnSync(command, args, {
   stdio: 'inherit',
   shell: false,
   env: process.env,
