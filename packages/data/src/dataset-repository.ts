@@ -269,9 +269,12 @@ export class InMemoryDatasetRepository implements DatasetRepository {
       return;
     }
 
-    const datasetId = (process.env.DATASET_ID ?? 'dataset-custom-csv').trim();
-    const symbolCode = (process.env.DATASET_SYMBOL_CODE ?? 'ETHUSDT').trim().toUpperCase() as SymbolCode;
+    const symbolCode = (process.env.DATASET_SYMBOL_CODE ?? process.env.DATASET_SYMBOL ?? 'ETHUSDT').trim().toUpperCase() as SymbolCode;
     const timeframe = (process.env.DATASET_TIMEFRAME ?? '15m').trim() as Timeframe;
+    const normalizedSymbol = symbolCode.toLowerCase();
+    const normalizedTimeframe = timeframe.toLowerCase();
+    const derivedDatasetId = `dataset-${normalizedSymbol}-${normalizedTimeframe}`;
+    const datasetId = (process.env.DATASET_ID ?? derivedDatasetId).trim() || derivedDatasetId;
 
     const csvDataset = parseCsvDataset(datasetCsvPath, datasetId, symbolCode, timeframe);
     this.datasets.unshift(csvDataset);
