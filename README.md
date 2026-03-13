@@ -94,6 +94,8 @@ Key contract groups:
   - `ccxt`: exchange + API credentials
   - `ctrader`: base URL + auth/account credentials
 - **Datasets/replay/backtest**: `DATASET_ID`, `REPLAY_*` controls.
+  - Optional CSV import path: `DATASET_CSV_PATH` (with `DATASET_SYMBOL_CODE`/`DATASET_TIMEFRAME`).
+  - Example ETH setup: place `ETHUSDT_15m.csv` at `./datasets/ETHUSDT_15m.csv`, then set `DATASET_CSV_PATH=./datasets/ETHUSDT_15m.csv` and `DATASET_ID=dataset-ethusdt-15m`.
 - **Live safety/alerts**: `LIVE_ENABLED`, `LIVE_ENGINE_ENABLED`, `TELEGRAM_*`.
 
 ## Local development
