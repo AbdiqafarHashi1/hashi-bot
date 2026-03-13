@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { loadDotEnvIfPresent } from './lib/env-loader.mjs';
 import { resolveDatasetSelection } from './lib/dataset-runtime.mjs';
 
@@ -56,9 +57,11 @@ try {
 }
 `;
 
-const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const tsxBin = process.platform === 'win32'
+  ? path.resolve('node_modules', '.bin', 'tsx.cmd')
+  : path.resolve('node_modules', '.bin', 'tsx');
 
-const result = spawnSync(pnpmBin, ['tsx', '-e', checkCode], {
+const result = spawnSync(tsxBin, ['-e', checkCode], {
   stdio: 'inherit',
   shell: false,
   env: process.env,
