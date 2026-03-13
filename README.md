@@ -1,33 +1,48 @@
 # hashi-bot
 
-Phase 9 release-candidate baseline for a modular trading bot monorepo supporting replay, backtest, paper, and live workflows across crypto and forex-style markets.
+Phase 9 release-candidate monorepo for a modular trading bot architecture with split runtimes (`web` + `worker`) and explicit support for replay, backtest, paper, and live workflows.
 
-## Purpose
+## Architecture overview
 
-This repository now carries the **release-candidate architecture, hardening, and operational workflows** for first serious deployment. The design keeps strict boundaries between web orchestration and worker runtime execution.
+This repository is organized around **runtime isolation** and **package boundaries**:
 
-Planned long-term support includes:
-- Market support: crypto, forex, metals, indices
-- Operation modes: replay, instant backtest, paper, live
-- Execution venues: mock, personal exchange APIs, and prop/forex adapters
-- Shared strategy core with profile-specific behavior
-- Supabase-backed storage and configuration
-- Vercel-hosted web app plus a separate always-on worker runtime
+- `apps/web` is the operator/dashboard surface and thin API layer.
+- `apps/worker` is the runtime engine host for evaluation/replay/backtest/paper/live execution loops.
+- `packages/*` contain modular domain components shared by web/worker.
 
-## Phase 9 scope (release-candidate state)
+### Runtime responsibility split
 
-Current Phase 9 baseline includes:
-- Hardened web/worker split with fail-fast environment validation
-- Replay/backtest/paper/live runtime checks and smoke flows
-- Operational runbooks for deployment, recovery, and release checklist gating
-- Critical-path automated tests for strategy/risk/backtest/execution flows
+- **Web (`apps/web`)**
+  - Validates web environment contract at startup.
+  - Exposes lightweight API routes for health, datasets, replay/backtest orchestration, and live safety/operations views.
+  - Does **not** run long-lived trading loops.
 
-Intentional out-of-scope for this release candidate:
-- Broad multi-venue expansion beyond current adapters
-- Organization-level multi-user control plane
-- Major architecture rewrites
+- **Worker (`apps/worker`)**
+  - Validates worker mode + execution venue contract at startup.
+  - Boots safety rails/recovery for paper/live.
+  - Runs mode-specific loop orchestration:
+    - `evaluation`
+    - `replay`
+    - `backtest`
+    - `paper`
+    - `live`
 
-## Monorepo structure
+## Runtime flow (end-to-end chain)
+
+The production chain is wired as:
+
+`dataset -> data layer -> indicators -> strategy -> risk -> execution -> telemetry`
+
+At a high level:
+
+1. Data repositories provide dataset candles and runtime state.
+2. Evaluation builds market snapshots and indicator context.
+3. Strategy/regime/scoring produce ranked trade signals.
+4. Risk engine validates tradability and derives position plans.
+5. Execution adapter submits/synchronizes orders/positions.
+6. Telemetry records incidents, emergency command outcomes, and operational status.
+
+## Repository layout
 
 ```text
 hashi-bot/
@@ -44,145 +59,124 @@ hashi-bot/
     execution/
     backtest/
     telemetry/
-  supabase/
-    migrations/
-    seed/
-  datasets/
-    crypto/
-    forex/
   scripts/
+  datasets/
+  docs/
+    runbooks/
 ```
 
-## Responsibilities
+## Package responsibilities
 
-### Apps
-- `apps/web`: dashboard and lightweight API routes only
-- `apps/worker`: replay/backtest/live loop shells and workers
+- `packages/core`: shared enums/types/constants/config/helpers.
+- `packages/market`: market normalization and symbol metadata helpers.
+- `packages/data`: repositories for datasets, run history, and live operations state.
+- `packages/indicators`: pure indicator calculations.
+- `packages/strategy`: regime/scoring/setup/strategy orchestration.
+- `packages/risk`: sizing/governance/risk decision logic.
+- `packages/execution`: adapters (`mock`, `ccxt`, `ctrader`) + safety/reconciliation/watchdog.
+- `packages/backtest`: deterministic backtest/replay engines + fills/metrics/state-machine.
+- `packages/telemetry`: sink interfaces and in-memory implementations.
 
-### Packages
-- `packages/core`: shared enums, constants, types, config, and utilities
-- `packages/market`: symbol registry, metadata, normalization, sessions
-- `packages/data`: dataset parsing/validation and in-memory repositories for replay/backtest/live run-history workflows
-- `packages/indicators`: pure indicator implementations
-- `packages/strategy`: strategy interfaces and scoring/setup/regime engines
-- `packages/risk`: profile, sizing, and governance logic
-- `packages/execution`: adapter interfaces and implementations (mock/ccxt/ctrader)
-- `packages/backtest`: replay/backtest/fill/state-machine engines and contracts
-- `packages/telemetry`: logging/incidents/alerts interfaces and in-memory sinks
+## Environment contract
 
-## Tooling
+Copy and fill `.env.example` for local work:
 
-- Package manager: `pnpm` workspaces
-- Task runner: `turbo`
-- Language: TypeScript across apps/packages
-- Base TS config: `tsconfig.base.json` for shared strict compiler behavior
+```bash
+cp .env.example .env
+```
 
-## Root scripts
+Key contract groups:
 
-- `pnpm dev`: run all workspace dev tasks via turbo
-- `pnpm build`: run all workspace build tasks via turbo
-- `pnpm lint`: run all workspace lint tasks via turbo
-- `pnpm typecheck`: run all workspace typecheck tasks via turbo
-- `pnpm dev:web`: run web app dev task
-- `pnpm dev:worker`: run worker app dev task
-- `pnpm verify:env`: local baseline env check (dev + paper profile)
-- `pnpm verify:env:web:prod`: strict web production env verification
-- `pnpm verify:env:worker:paper`: worker paper-mode env verification
-- `pnpm verify:env:worker:live`: worker live-mode env verification
-- `pnpm bootstrap:local`: print local bootstrap checklist
-- `pnpm verify:migrations`: migration readiness check (`supabase/migrations` SQL presence, or explicit N/A)
-- `pnpm verify:dataset`: dataset import/sanity check (repository load + timestamp ordering)
-- `pnpm smoke:backtest`: worker backtest smoke run on synthetic dataset
-- `pnpm smoke:replay`: worker replay smoke run with deterministic step action
-- `pnpm smoke:live:mock`: worker paper/live-loop smoke run using mock adapter
-- `pnpm verify:release`: full pre-release verification chain (env, typecheck, lint, build, migrations, dataset, smoke runs)
-- Release checklist runbook: `docs/runbooks/release-checklist.md`
-- `docs/runbooks/deployment.md`: deployment split + startup/env hardening runbook
+- **Web runtime**: `NEXT_PUBLIC_APP_NAME` (+ Supabase public keys in production).
+- **Worker runtime**: `WORKER_MODE`, `DATABASE_URL`, `REDIS_URL`, plus mode-specific keys.
+- **Execution adapters**:
+  - `mock`: no external credentials
+  - `ccxt`: exchange + API credentials
+  - `ctrader`: base URL + auth/account credentials
+- **Datasets/replay/backtest**: `DATASET_ID`, `REPLAY_*` controls.
+- **Live safety/alerts**: `LIVE_ENABLED`, `LIVE_ENGINE_ENABLED`, `TELEGRAM_*`.
 
-
-## Architecture + operator docs
-
-- Deployment runbook: `docs/runbooks/deployment.md`
-- Operator guide (setup/operations/recovery): `docs/runbooks/operator-guide.md`
-- Release checklist (pre-deploy + go-live gates): `docs/runbooks/release-checklist.md`
-
-These documents are the primary operational references for deploy, run-mode safety, replay/backtest usage, and incident recovery.
-
-## How later phases plug in
-
-This structure is intentionally future-facing. Later phases can add implementation details without restructuring:
-- `packages/*` evolve from contracts/stubs into functional modules
-- `apps/worker` becomes the runtime host for replay/backtest/live loops
-- `apps/web` remains UI/API orchestration without long-running trading loops
-- Supabase migrations and repositories become the persistent source for run/profile/config state
-- Dataset import scripts and registry logic expand to support multi-pair pipelines
-
-## Quick start
+## Local development
 
 1. Install dependencies:
+
    ```bash
    pnpm install
    ```
-2. Copy environment template:
+
+2. Configure environment:
+
    ```bash
    cp .env.example .env
    ```
+
 3. Validate baseline environment:
+
    ```bash
    pnpm verify:env
    ```
-4. Start runtimes (split architecture):
+
+4. Start runtimes independently:
+
    ```bash
    pnpm dev:web
    pnpm dev:worker
    ```
-5. Optional runtime sanity checks:
-   ```bash
-   pnpm smoke:backtest
-   pnpm smoke:replay
-   pnpm smoke:live:mock
-   ```
 
-## Pre-release smoke and verification flow
+## Runtime modes and smoke commands
 
-See `docs/runbooks/release-checklist.md` for the operator checkboxes and go-live safety gates.
+- Replay smoke:
 
+  ```bash
+  pnpm smoke:replay
+  ```
 
-Run these checks in order for fast confidence before merge/deploy/live usage:
+- Backtest smoke:
 
-1. Verify environment contract (baseline and deploy-target specific checks):
-   ```bash
-   pnpm verify:env
-   pnpm verify:env:web:prod
-   pnpm verify:env:worker:paper
-   # For non-mock live deployment:
-   pnpm verify:env:worker:live
-   ```
-2. Verify static quality/build:
-   ```bash
-   pnpm typecheck
-   pnpm lint
-   pnpm build
-   ```
-3. Verify migration readiness and dataset sanity:
-   ```bash
-   pnpm verify:migrations
-   pnpm verify:dataset
-   ```
-4. Run runtime smoke flows:
-   ```bash
-   pnpm smoke:backtest
-   pnpm smoke:replay
-   pnpm smoke:live:mock
-   ```
+  ```bash
+  pnpm smoke:backtest
+  ```
 
-Or run the end-to-end chain:
+- Paper/live-path smoke with mock execution adapter:
+
+  ```bash
+  pnpm smoke:live:mock
+  ```
+
+## Verification workflow (release candidate)
+
+Recommended validation sequence:
+
+```bash
+pnpm verify:env
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm verify:migrations
+pnpm verify:dataset
+pnpm smoke:backtest
+pnpm smoke:replay
+pnpm smoke:live:mock
+```
+
+Or run the chained release gate:
 
 ```bash
 pnpm verify:release
 ```
 
-Notes:
-- `smoke:backtest`/`smoke:replay` default to built-in synthetic datasets (`dataset-btc-1m`).
-- `smoke:live:mock` runs in `WORKER_MODE=paper` with `EXECUTION_VENUE=mock` and one cycle.
-- These are practical runtime checks (not placeholders), intended to catch regressions in worker orchestration and critical data paths quickly.
+## Deployment model
+
+Deploy as **split services**:
+
+1. `apps/web` service (dashboard + API orchestration)
+2. `apps/worker` service (runtime loops + execution)
+3. external storage dependencies (DB/Redis, optional Supabase integration)
+
+Do not colocate long-running worker loops inside the web runtime.
+
+## Runbooks
+
+- Deployment: `docs/runbooks/deployment.md`
+- Operator guide: `docs/runbooks/operator-guide.md`
+- Release checklist: `docs/runbooks/release-checklist.md`

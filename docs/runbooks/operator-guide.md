@@ -29,6 +29,7 @@ This guide is for day-to-day operation of the bot with the current split archite
 
 ### Worker (paper)
 - Required baseline: `DATABASE_URL`, `REDIS_URL`, `LIVE_ACCOUNT_REF`, `EXECUTION_VENUE`
+- Common runtime controls: `WATCHLIST_SYMBOLS`, `RANKING_LIMIT`, `LIVE_MAX_CYCLES`, `LIVE_CYCLE_DELAY_MS`, `LIVE_STALE_AFTER_MS`
 - Venue requirements:
   - `mock`: no external credentials
   - `ccxt`: `CCXT_API_KEY`, `CCXT_API_SECRET`
