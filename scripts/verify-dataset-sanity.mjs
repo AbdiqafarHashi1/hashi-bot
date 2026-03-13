@@ -48,13 +48,33 @@ try {
 
   console.log('[verify:dataset] OK datasets=' + datasets.length + ' symbols=' + symbols.length + ' requested=' + requestedDatasetId);
 } catch (error) {
-  const details = error instanceof Error ? error.message : String(error);
+  const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
   console.error('[verify:dataset] Failed: ' + details);
-  console.error('[verify:dataset] Runtime context: DATASET_ID=' + (process.env.DATASET_ID ?? '(unset)') + ' DATASET_CSV_PATH=' + (process.env.DATASET_CSV_PATH ?? '(unset)') + ' DATASET_SYMBOL_CODE=' + (process.env.DATASET_SYMBOL_CODE ?? '(unset)') + ' DATASET_TIMEFRAME=' + (process.env.DATASET_TIMEFRAME ?? '(unset)'));
+  console.error('[verify:dataset] Runtime context: DATASET_ID=' + (process.env.DATASET_ID ?? '(unset)') + ' DATASET_CSV_PATH=' + (process.env.DATASET_CSV_PATH ?? '(unset)') + ' DATASET_SYMBOL=' + (process.env.DATASET_SYMBOL ?? '(unset)') + ' DATASET_SYMBOL_CODE=' + (process.env.DATASET_SYMBOL_CODE ?? '(unset)') + ' DATASET_TIMEFRAME=' + (process.env.DATASET_TIMEFRAME ?? '(unset)'));
   console.error('[verify:dataset] Action: ensure DATASET_ID matches the loaded CSV dataset id and DATASET_CSV_PATH points to an existing OHLCV CSV file.');
   process.exit(1);
 }
 `;
 
-const result = spawnSync('pnpm', ['tsx', '-e', checkCode], { stdio: 'inherit', shell: false, env: process.env });
-process.exit(result.status ?? 1);
+const result = spawnSync('pnpm', ['tsx', '-e', checkCode], {
+  stdio: 'inherit',
+  shell: false,
+  env: process.env,
+});
+
+if (result.error) {
+  console.error('[verify:dataset] Failed to execute tsx check: ' + result.error.message);
+  process.exit(1);
+}
+
+if (typeof result.status === 'number') {
+  process.exit(result.status);
+}
+
+if (result.signal) {
+  console.error('[verify:dataset] Dataset verification terminated by signal: ' + result.signal);
+  process.exit(1);
+}
+
+console.error('[verify:dataset] Dataset verification failed with an unknown execution state.');
+process.exit(1);
