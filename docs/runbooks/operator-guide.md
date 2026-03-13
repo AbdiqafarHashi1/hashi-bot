@@ -47,7 +47,8 @@ This guide is for day-to-day operation of the bot with the current split archite
 
 - Canonical location: `supabase/migrations` (SQL files).
 - Check readiness: `pnpm verify:migrations`.
-- If the directory is absent in a snapshot, migration check returns explicit N/A (not a false pass).
+- Phase 9 baseline includes an explicit no-op SQL migration to establish migration history safely.
+- If the directory is absent in other snapshots, migration check returns explicit N/A (not a false pass).
 - Keep schema updates versioned and deployed before worker mode changes that depend on them.
 
 ## 5) Dataset import and sanity flow
