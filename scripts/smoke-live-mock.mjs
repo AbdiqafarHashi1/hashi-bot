@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { loadDotEnvIfPresent } from './lib/env-loader.mjs';
+
+loadDotEnvIfPresent();
 
 const build = spawnSync('pnpm', ['build'], {
   stdio: 'inherit',

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import 'dotenv/config';
+import { loadDotEnvIfPresent } from './lib/env-loader.mjs';
+
+loadDotEnvIfPresent();
 
 const argv = process.argv.slice(2);
 

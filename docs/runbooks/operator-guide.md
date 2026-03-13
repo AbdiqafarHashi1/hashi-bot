@@ -55,7 +55,10 @@ This guide is for day-to-day operation of the bot with the current split archite
 
 - Datasets are expected to be present and timestamp-ordered for replay/backtest use.
 - Validate with: `pnpm verify:dataset`.
-- This check verifies dataset presence, symbol presence, and candle timestamp ordering.
+- This check verifies dataset presence, symbol presence, candle timestamp ordering, and that configured `DATASET_ID` resolves.
+- Built-in IDs include `dataset-btc-1m` and `dataset-eurusd-1m`.
+- Optional CSV dataset ingestion: set `DATASET_CSV_PATH` and matching `DATASET_ID`.
+  - ETH example: store file at `./datasets/ETHUSDT_15m.csv`, set `DATASET_CSV_PATH=./datasets/ETHUSDT_15m.csv`, `DATASET_ID=dataset-ethusdt-15m`, `DATASET_SYMBOL_CODE=ETHUSDT`, `DATASET_TIMEFRAME=15m`.
 
 ## 6) Replay usage (operator flow)
 
