@@ -56,7 +56,9 @@ try {
 }
 `;
 
-const result = spawnSync('pnpm', ['tsx', '-e', checkCode], {
+const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+
+const result = spawnSync(pnpmBin, ['tsx', '-e', checkCode], {
   stdio: 'inherit',
   shell: false,
   env: process.env,
