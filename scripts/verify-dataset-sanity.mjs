@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import path from 'node:path';
 import { loadDotEnvIfPresent } from './lib/env-loader.mjs';
 import { resolveDatasetSelection } from './lib/dataset-runtime.mjs';
 
@@ -47,25 +46,45 @@ try {
     );
   }
 
-  console.log('[verify:dataset] OK datasets=' + datasets.length + ' symbols=' + symbols.length + ' requested=' + requestedDatasetId);
+  console.log(
+    '[verify:dataset] OK datasets=' +
+      datasets.length +
+      ' symbols=' +
+      symbols.length +
+      ' requested=' +
+      requestedDatasetId
+  );
 } catch (error) {
   const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
   console.error('[verify:dataset] Failed: ' + details);
-  console.error('[verify:dataset] Runtime context: DATASET_ID=' + (process.env.DATASET_ID ?? '(unset)') + ' DATASET_CSV_PATH=' + (process.env.DATASET_CSV_PATH ?? '(unset)') + ' DATASET_SYMBOL=' + (process.env.DATASET_SYMBOL ?? '(unset)') + ' DATASET_SYMBOL_CODE=' + (process.env.DATASET_SYMBOL_CODE ?? '(unset)') + ' DATASET_TIMEFRAME=' + (process.env.DATASET_TIMEFRAME ?? '(unset)'));
-  console.error('[verify:dataset] Action: ensure DATASET_ID matches the loaded CSV dataset id and DATASET_CSV_PATH points to an existing OHLCV CSV file.');
+  console.error(
+    '[verify:dataset] Runtime context: DATASET_ID=' +
+      (process.env.DATASET_ID ?? '(unset)') +
+      ' DATASET_CSV_PATH=' +
+      (process.env.DATASET_CSV_PATH ?? '(unset)') +
+      ' DATASET_SYMBOL=' +
+      (process.env.DATASET_SYMBOL ?? '(unset)') +
+      ' DATASET_SYMBOL_CODE=' +
+      (process.env.DATASET_SYMBOL_CODE ?? '(unset)') +
+      ' DATASET_TIMEFRAME=' +
+      (process.env.DATASET_TIMEFRAME ?? '(unset)')
+  );
+  console.error(
+    '[verify:dataset] Action: ensure DATASET_ID matches the loaded CSV dataset id and DATASET_CSV_PATH points to an existing OHLCV CSV file.'
+  );
   process.exit(1);
 }
 `;
 
-const tsxBin = process.platform === 'win32'
-  ? path.resolve('node_modules', '.bin', 'tsx.cmd')
-  : path.resolve('node_modules', '.bin', 'tsx');
-
-const result = spawnSync(tsxBin, ['-e', checkCode], {
-  stdio: 'inherit',
-  shell: false,
-  env: process.env,
-});
+const result = spawnSync(
+  process.execPath,
+  ['--import', 'tsx', '--eval', checkCode],
+  {
+    stdio: 'inherit',
+    shell: false,
+    env: process.env,
+  }
+);
 
 if (result.error) {
   console.error('[verify:dataset] Failed to execute tsx check: ' + result.error.message);

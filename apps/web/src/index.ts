@@ -1,6 +1,6 @@
 import type { InstantBacktestRequest, ReplayControlAction } from '@hashi-bot/backtest';
 import type { DatasetId, EpochMs, ProfileCode, SymbolCode, Timeframe } from '@hashi-bot/core';
-
+import 'dotenv/config';
 import {
   controlReplayRoute,
   createBacktestRoute,
