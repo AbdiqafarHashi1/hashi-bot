@@ -2,18 +2,33 @@ export type RunModeFilter = 'all' | 'replay' | 'backtest';
 export type TradeResultFilter = 'all' | 'wins' | 'losses' | 'breakeven';
 export type LiveSectionFocus = 'summary' | 'positions' | 'orders' | 'incidents' | 'safety';
 export type SafetyViewFocus = 'summary' | 'incidents' | 'lockout';
+export type SortDirection = 'asc' | 'desc';
 
 export type SectionKey =
   | 'hero-metrics'
-  | 'inventory-table'
+  | 'investigation-rail'
   | 'trade-table'
   | 'trade-inspector'
-  | 'comparison-panel'
+  | 'outcome-panel'
+  | 'run-inventory'
+  | 'run-comparison'
+  | 'run-health'
+  | 'command-rail'
+  | 'metrics-strip'
+  | 'open-position'
+  | 'reasoning-panel'
+  | 'timeline'
+  | 'trades-table'
+  | 'launch-rail'
+  | 'performance-panel'
+  | 'outcomes-panel'
+  | 'run-analyzer'
+  | 'positions'
+  | 'orders'
+  | 'health'
+  | 'incidents'
   | 'safety-summary'
-  | 'positions-panel'
-  | 'incidents-panel'
-  | 'run-console'
-  | 'performance-panel';
+  | 'lockouts';
 
 export interface PaginationViewModel {
   page: number;
@@ -24,6 +39,11 @@ export interface PaginationViewModel {
   hasPrev: boolean;
   rowStart: number;
   rowEnd: number;
+}
+
+export interface SortState {
+  field?: string;
+  dir: SortDirection;
 }
 
 export interface SectionRenderState {
@@ -42,6 +62,7 @@ export interface QueryStateViewModel {
   sectionRender: SectionRenderState;
   page: number;
   pageSize: number;
+  sort: SortState;
 }
 
 function pickString(query: URLSearchParams, key: string): string | undefined {
@@ -74,20 +95,38 @@ export function normalizeSafetyView(value: string | undefined): SafetyViewFocus 
   return 'summary';
 }
 
+export function normalizeSortDirection(value: string | undefined): SortDirection {
+  return value === 'asc' ? 'asc' : 'desc';
+}
+
 const SECTION_KEYS: SectionKey[] = [
   'hero-metrics',
-  'inventory-table',
+  'investigation-rail',
   'trade-table',
   'trade-inspector',
-  'comparison-panel',
-  'safety-summary',
-  'positions-panel',
-  'incidents-panel',
-  'run-console',
+  'outcome-panel',
+  'run-inventory',
+  'run-comparison',
+  'run-health',
+  'command-rail',
+  'metrics-strip',
+  'open-position',
+  'reasoning-panel',
+  'timeline',
+  'trades-table',
+  'launch-rail',
   'performance-panel',
+  'outcomes-panel',
+  'run-analyzer',
+  'positions',
+  'orders',
+  'health',
+  'incidents',
+  'safety-summary',
+  'lockouts',
 ];
 
-function normalizeSectionKey(value: string | undefined): SectionKey | undefined {
+export function resolveSectionKey(value: string | undefined): SectionKey | undefined {
   return value && SECTION_KEYS.includes(value as SectionKey) ? (value as SectionKey) : undefined;
 }
 
@@ -103,8 +142,8 @@ export function parseQueryState(query: URLSearchParams): QueryStateViewModel {
   const runId = pickString(query, 'runId');
   const result = normalizeResultFilter(pickString(query, 'result'));
   const sectionRender: SectionRenderState = {
-    section: normalizeSectionKey(pickString(query, 'section')) ?? 'all',
-    refreshTarget: normalizeSectionKey(pickString(query, 'refresh')),
+    section: resolveSectionKey(pickString(query, 'section')) ?? 'all',
+    refreshTarget: resolveSectionKey(pickString(query, 'refresh')),
   };
 
   return {
@@ -118,6 +157,7 @@ export function parseQueryState(query: URLSearchParams): QueryStateViewModel {
     sectionRender,
     page: normalizePositiveInt(pickString(query, 'page'), 1, 500),
     pageSize: normalizePositiveInt(pickString(query, 'pageSize'), 50, 200),
+    sort: { field: pickString(query, 'sort'), dir: normalizeSortDirection(pickString(query, 'dir')) },
   };
 }
 

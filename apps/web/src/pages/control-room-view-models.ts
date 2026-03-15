@@ -1,4 +1,13 @@
-import { buildHref, normalizeResultFilter, shapePagination, type PaginationViewModel, type QueryStateViewModel, type SectionRenderState } from './control-room-query-state.js';
+import {
+  buildHref,
+  normalizeResultFilter,
+  normalizeSortDirection,
+  shapePagination,
+  type PaginationViewModel,
+  type QueryStateViewModel,
+  type SectionRenderState,
+  type SortDirection,
+} from './control-room-query-state.js';
 export interface PanelAvailability {
   status: 'available' | 'unavailable' | 'empty';
   reason?: string;
@@ -553,6 +562,27 @@ function avg(values: number[]): number | undefined {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function normalizeTradeSortField(value: unknown): 'pnl' | 'opened' | 'closed' | 'symbol' | 'result' | undefined {
+  return value === 'pnl' || value === 'opened' || value === 'closed' || value === 'symbol' || value === 'result' ? value : undefined;
+}
+
+function normalizeRunSortField(value: unknown): 'createdAt' | 'completedAt' | 'netPnl' | 'winRate' | 'tradeCount' | undefined {
+  return value === 'createdAt' || value === 'completedAt' || value === 'netPnl' || value === 'winRate' || value === 'tradeCount' ? value : undefined;
+}
+
+function applyRowSorting<T>(rows: T[], dir: SortDirection, read: (row: T) => string | number | undefined): T[] {
+  const multiplier = dir === 'asc' ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    const av = read(a);
+    const bv = read(b);
+    if (av === undefined && bv === undefined) return 0;
+    if (av === undefined) return 1;
+    if (bv === undefined) return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * multiplier;
+    return String(av).localeCompare(String(bv)) * multiplier;
+  });
+}
+
 function parseTradeRowsFromRun(mode: 'replay' | 'backtest', runId: string, runDetail: GenericRecord | undefined): TradeRowReviewViewModel[] {
   const run = asRecord(runDetail?.run);
   const summary = asRecord(run?.summary);
@@ -641,6 +671,8 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
   const selectedMode = text(sourceSection?.selectedSourceMode, 'none');
   const selectedRunId = text(sourceSection?.selectedRunId, 'none');
   const resultFilter = normalizeResultFilter(text(querySection?.result, 'all'));
+  const sortField = normalizeTradeSortField(querySection?.sort);
+  const sortDir = normalizeSortDirection(typeof querySection?.dir === 'string' ? querySection.dir : undefined);
   const reasonFilter = text(querySection?.reason, 'none');
 
   const detailEndpoint = selectedMode === 'replay'
@@ -658,12 +690,21 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
     if (resultFilter === 'losses') return row.result.label === 'loss';
     return row.result.label === 'breakeven';
   });
-  const selected = resultFiltered[0];
+  const sortedRows = sortField
+    ? applyRowSorting(resultFiltered, sortDir, (row) => {
+        if (sortField === 'pnl') return row.pnlRaw;
+        if (sortField === 'opened') return row.opened;
+        if (sortField === 'closed') return row.closed;
+        if (sortField === 'symbol') return row.symbol;
+        return row.result.label;
+      })
+    : resultFiltered;
+  const selected = sortedRows[0];
 
   const pageNum = Math.max(1, Number(querySection?.page ?? 1));
   const pageSize = Math.max(10, Math.min(200, Number(querySection?.pageSize ?? 50)));
-  const pagination = shapePagination(resultFiltered.length, pageNum, pageSize);
-  const pagedRows = resultFiltered.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
+  const pagination = shapePagination(sortedRows.length, pageNum, pageSize);
+  const pagedRows = sortedRows.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
 
   const wins = resultFiltered.filter((row) => row.pnlRaw !== undefined && row.pnlRaw > 0);
   const losses = resultFiltered.filter((row) => row.pnlRaw !== undefined && row.pnlRaw < 0);
@@ -690,6 +731,7 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
       sectionRender: { section: 'all' },
       page: pagination.page,
       pageSize: pagination.pageSize,
+      sort: { field: sortField, dir: sortDir },
     },
     sectionRender: { section: 'all' },
     pagination,
@@ -795,13 +837,24 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
   const rows = parseRunRows(inventory);
 
   const mode = text(querySection?.mode, 'all');
+  const sortField = normalizeRunSortField(querySection?.sort);
+  const sortDir = normalizeSortDirection(typeof querySection?.dir === 'string' ? querySection.dir : undefined);
   const selectedRunId = text(querySection?.selectedRunId, rows[0]?.runId ?? 'none');
-  const selectedRun = rows.find((row) => row.runId === selectedRunId);
+  const sortedRows = sortField
+    ? applyRowSorting(rows, sortDir, (row) => {
+        if (sortField === 'createdAt') return row.createdAt;
+        if (sortField === 'completedAt') return row.completedAt;
+        if (sortField === 'netPnl') return row.netPnlRaw;
+        if (sortField === 'winRate') return row.winRateRaw;
+        return Number(row.totalTrades.replaceAll(',', ''));
+      })
+    : rows;
+  const selectedRun = sortedRows.find((row) => row.runId === selectedRunId);
 
   const pageNum = Math.max(1, Number(querySection?.page ?? 1));
   const pageSize = Math.max(10, Math.min(200, Number(querySection?.pageSize ?? 50)));
-  const pagination = shapePagination(rows.length, pageNum, pageSize);
-  const pageRows = rows.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
+  const pagination = shapePagination(sortedRows.length, pageNum, pageSize);
+  const pageRows = sortedRows.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
 
   const completed = rows.filter((row) => row.status === 'completed').length;
   const failed = rows.filter((row) => row.status.includes('fail') || row.status.includes('error')).length;
@@ -828,6 +881,7 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
       sectionRender: { section: 'all' },
       page: pagination.page,
       pageSize: pagination.pageSize,
+      sort: { field: sortField, dir: sortDir },
     },
     sectionRender: { section: 'all' },
     pagination,

@@ -147,6 +147,39 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function buildFragmentLink(path: string, query: URLSearchParams, sectionKey: string): string {
+  const next = new URLSearchParams(query);
+  next.set('refresh', sectionKey);
+  next.delete('section');
+  return `${path}?${next.toString()}`;
+}
+
+function buildPaginationLinks(path: string, query: URLSearchParams, page: number, pageSize: number): { prev: string; next: string } {
+  const prev = new URLSearchParams(query);
+  prev.set('page', String(Math.max(1, page - 1)));
+  prev.set('pageSize', String(pageSize));
+  const next = new URLSearchParams(query);
+  next.set('page', String(page + 1));
+  next.set('pageSize', String(pageSize));
+  return {
+    prev: `${path}?${prev.toString()}`,
+    next: `${path}?${next.toString()}`,
+  };
+}
+
+function renderPaginationBar(path: string, query: URLSearchParams, pagination: { page: number; totalPages: number; pageSize: number; totalRows: number; hasPrev: boolean; hasNext: boolean; rowStart: number; rowEnd: number }): string {
+  const links = buildPaginationLinks(path, query, pagination.page, pagination.pageSize);
+  return `<div class="pagination-bar"><span>Rows ${escapeHtml(String(pagination.rowStart))}-${escapeHtml(String(pagination.rowEnd))} / ${escapeHtml(String(pagination.totalRows))} · page ${escapeHtml(String(pagination.page))}/${escapeHtml(String(pagination.totalPages))} · page size ${escapeHtml(String(pagination.pageSize))}</span><span class="pagination-actions"><a class="nav-link ${pagination.hasPrev ? '' : 'disabled'}" href="${escapeHtml(links.prev)}">Previous</a><a class="nav-link ${pagination.hasNext ? '' : 'disabled'}" href="${escapeHtml(links.next)}">Next</a></span></div>`;
+}
+
+function renderOperatorStatusStrip(page: FoundationPage): string {
+  const modeSection = sectionData(page, 'venue_summary') ?? sectionData(page, 'safety_mode');
+  const workerHealth = sectionData(page, 'health') ?? sectionData(page, 'safety_health');
+  const profile = asRecord(sectionData(page, 'launch_context') ?? sectionData(page, 'query_state'));
+  const symbols = asRecord(sectionData(page, 'active_run') ?? sectionData(page, 'trade_sources'));
+  return `<section class="operator-strip"><article><p>Mode</p><h3>${statusBadge(String(modeSection?.mode ?? 'unavailable'))}</h3></article><article><p>Worker Health</p><h3>${statusBadge(String(workerHealth?.status ?? 'worker heartbeat not surfaced'))}</h3></article><article><p>Active Symbol</p><h3>${escapeHtml(String(symbols?.symbolCode ?? symbols?.selectedRunId ?? 'not selected'))}</h3></article><article><p>Active Profile</p><h3>${escapeHtml(String(profile?.profileCode ?? profile?.mode ?? 'not selected'))}</h3></article><article><p>Dataset / TF</p><h3>${escapeHtml(String(profile?.datasetId ?? 'dataset n/a'))} · ${escapeHtml(String(profile?.timeframe ?? 'tf n/a'))}</h3></article><article><p>Run ID</p><h3>${escapeHtml(String(profile?.selectedRunId ?? symbols?.selectedRunId ?? 'n/a'))}</h3></article></section>`;
+}
+
 function renderOverviewHero(page: FoundationPage): string {
   const capabilities = sectionData(page, 'capabilities');
   const liveExecution = capabilities && typeof capabilities.liveExecution === 'object' && capabilities.liveExecution !== null
@@ -611,7 +644,7 @@ function renderTableFromRuns(items: unknown[]): string {
   </table>`;
 }
 
-function renderPanels(page: FoundationPage): string {
+function renderPanels(page: FoundationPage, query: URLSearchParams = new URLSearchParams()): string {
   if (page.path === '/replay') {
     return renderReplayCockpit(page);
   }
@@ -627,12 +660,16 @@ function renderPanels(page: FoundationPage): string {
     const liveContext = sectionData(page, 'operator_context');
     const focus = String(liveContext?.sectionFocus ?? 'summary');
 
-    return `<section class="panel-grid three-col">
-      <article class="panel ${focus === 'orders' ? 'panel-focus' : ''}"><header><h3>Orders</h3><p>Open orders snapshot.</p></header>${renderJsonBlock(orders ?? {})}</article>
-      <article class="panel ${focus === 'positions' ? 'panel-focus' : ''}"><header><h3>Positions</h3><p>Open positions snapshot.</p></header>${renderJsonBlock(positions ?? {})}</article>
-      <article class="panel ${focus === 'incidents' ? 'panel-focus' : ''}"><header><h3>Incidents</h3><p>Latest incident context.</p></header>${renderJsonBlock(incidents ?? {})}</article>
+    return `<section data-section="positions" class="panel-grid single-col">
+      <article class="panel ${focus === 'positions' ? 'panel-focus' : ''}"><header><h3>Open Positions</h3><p>No active positions when empty.</p></header>${positions && Array.isArray((positions as Record<string, unknown>).positions) && ((positions as Record<string, unknown>).positions as unknown[]).length===0 ? '<p class="muted">No active positions</p>' : renderJsonBlock(positions ?? {})}</article>
     </section>
-    <section class="panel-grid two-col">${page.sections
+    <section data-section="orders" class="panel-grid single-col">
+      <article class="panel ${focus === 'orders' ? 'panel-focus' : ''}"><header><h3>Open Orders</h3><p>No orders in flight when empty.</p></header>${orders && Array.isArray((orders as Record<string, unknown>).orders) && ((orders as Record<string, unknown>).orders as unknown[]).length===0 ? '<p class="muted">No orders in flight</p>' : renderJsonBlock(orders ?? {})}</article>
+    </section>
+    <section data-section="incidents" class="panel-grid single-col">
+      <article class="panel ${focus === 'incidents' ? 'panel-focus' : ''}"><header><h3>Incidents</h3><p>Worker heartbeat not surfaced is treated as degraded monitoring.</p></header>${renderJsonBlock(incidents ?? {})}</article>
+    </section>
+    <section data-section="health" class="panel-grid two-col">${page.sections
       .filter((section) => !['orders', 'positions', 'incidents', 'venue_summary'].includes(section.key))
       .map((section) => `<article class="panel"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`)
       .join('')}</section>`;
@@ -657,32 +694,37 @@ function renderPanels(page: FoundationPage): string {
       <td>${row.quickActions.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</td>
     </tr>`).join('');
 
-    return `<section class="metric-strip research">${metricCards}</section>
-    <section class="panel-grid single-col">
+    const sortDir = vm.queryState.sort.dir;
+    const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+    const sortHref = (field: string) => {
+      const q = new URLSearchParams(query);
+      q.set('sort', field);
+      q.set('dir', nextDir);
+      return `/runs?${q.toString()}`;
+    };
+
+    return `<section data-section="hero-metrics" class="metric-strip research">${metricCards}</section>
+    <section data-section="run-inventory" class="panel-grid single-col">
       <article class="panel">
         <header><h3>Run Inventory Table</h3><p>Cross-mode run table normalized for replay/backtest comparison.</p></header>
-        ${rows ? `<table><thead><tr><th>Run ID</th><th>Mode</th><th>Dataset</th><th>Profile</th><th>TF</th><th>Symbols</th><th>Status</th><th>Created</th><th>Completed</th><th>Trades</th><th>Net PnL</th><th>Win Rate</th><th>Quick Actions</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No run inventory rows surfaced.</p>'}
+        ${rows ? `<table><thead><tr><th>Run ID</th><th>Mode</th><th>Dataset</th><th>Profile</th><th>TF</th><th>Symbols</th><th>Status</th><th><a href="${escapeHtml(sortHref('createdAt'))}">Created</a></th><th><a href="${escapeHtml(sortHref('completedAt'))}">Completed</a></th><th><a href="${escapeHtml(sortHref('tradeCount'))}">Trades</a></th><th><a href="${escapeHtml(sortHref('netPnl'))}">Net PnL</a></th><th><a href="${escapeHtml(sortHref('winRate'))}">Win Rate</a></th><th>Quick Actions</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No run inventory rows surfaced.</p>'}
+        ${renderPaginationBar('/runs', query, vm.pagination)}
       </article>
     </section>
-    <section class="panel-grid single-col"><article class="panel"><header><h3>Dispatch Summary</h3><p>Mode/run selection and next operator step.</p></header><div class="diag-grid"><div class="diag-row"><span>Mode</span><strong>${escapeHtml(vm.dispatchSummary.selectedMode)}</strong></div><div class="diag-row"><span>Selected Run</span><strong>${escapeHtml(vm.dispatchSummary.selectedRun)}</strong></div><div class="diag-row"><span>Inventory</span><strong>${escapeHtml(vm.dispatchSummary.inventoryState)}</strong></div><div class="diag-row"><span>Next</span><strong>${escapeHtml(vm.dispatchSummary.nextAction)}</strong></div><div class="diag-row"><span>Rows</span><strong>${escapeHtml(String(vm.pagination.rowStart))}-${escapeHtml(String(vm.pagination.rowEnd))} / ${escapeHtml(String(vm.pagination.totalRows))}</strong></div></div></article></section>
-    <section class="panel-grid two-col">
+    <section data-section="run-comparison" class="panel-grid two-col">
       <article class="panel"><header><h3>Run Comparison</h3><p>Best/worst and latest surfaced run references.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Best Run</span><strong>${escapeHtml(vm.comparison.bestRun)}</strong></div>
         <div class="diag-row"><span>Worst Run</span><strong>${escapeHtml(vm.comparison.worstRun)}</strong></div>
         <div class="diag-row"><span>Highest Win Rate</span><strong>${escapeHtml(vm.comparison.highestWinRate)}</strong></div>
         <div class="diag-row"><span>Highest Trade Count</span><strong>${escapeHtml(vm.comparison.highestTradeCount)}</strong></div>
-        <div class="diag-row"><span>Latest Completed</span><strong>${escapeHtml(vm.comparison.latestCompletedRun)}</strong></div>
-        <div class="diag-row"><span>Latest Replay</span><strong>${escapeHtml(vm.comparison.latestReplayRun)}</strong></div>
-        <div class="diag-row"><span>Latest Backtest</span><strong>${escapeHtml(vm.comparison.latestBacktestRun)}</strong></div>
       </div></article>
       <article class="panel"><header><h3>Run Health / Completion</h3><p>Completion mix and dispatch guidance.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Completed vs Pending</span><strong>${escapeHtml(vm.healthPanel.completedVsPending)}</strong></div>
         <div class="diag-row"><span>Replay vs Backtest</span><strong>${escapeHtml(vm.healthPanel.replayVsBacktest)}</strong></div>
         <div class="diag-row"><span>Guidance</span><strong>${escapeHtml(vm.healthPanel.emptyGuidance)}</strong></div>
-        ${vm.healthPanel.operatorNotes.map((note) => `<p class="muted">• ${escapeHtml(note)}</p>`).join('')}
-        <div class="diag-row"><span>Cross Navigation</span><strong>${vm.crossNavigation.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
       </div></article>
-    </section>`;
+    </section>
+    <section data-section="run-health" class="panel-grid single-col"><article class="panel"><header><h3>Dispatch Summary</h3><p>Mode/run selection and next operator step.</p></header><div class="diag-grid"><div class="diag-row"><span>Mode</span><strong>${escapeHtml(vm.dispatchSummary.selectedMode)}</strong></div><div class="diag-row"><span>Selected Run</span><strong>${escapeHtml(vm.dispatchSummary.selectedRun)}</strong></div><div class="diag-row"><span>Inventory</span><strong>${escapeHtml(vm.dispatchSummary.inventoryState)}</strong></div><div class="diag-row"><span>Next</span><strong>${escapeHtml(vm.dispatchSummary.nextAction)}</strong></div></div></article></section>`;
   }
 
   if (page.path === '/trades') {
@@ -696,45 +738,40 @@ function renderPanels(page: FoundationPage): string {
       <td>${row.quickActions.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</td>
     </tr>`).join('');
 
-    return `<section class="metric-strip research">${metricCards}</section>
-    <section class="panel-grid single-col"><article class="panel"><header><h3>Active Filter Summary</h3><p>Current mode/run/result/reason state and row window.</p></header><div class="diag-grid"><div class="diag-row"><span>Mode</span><strong>${escapeHtml(vm.filterSummary.mode)}</strong></div><div class="diag-row"><span>Run</span><strong>${escapeHtml(vm.filterSummary.run)}</strong></div><div class="diag-row"><span>Result</span><strong>${escapeHtml(vm.filterSummary.result)}</strong></div><div class="diag-row"><span>Reason</span><strong>${escapeHtml(vm.filterSummary.reason)}</strong></div><div class="diag-row"><span>Rows</span><strong>${escapeHtml(vm.filterSummary.rowCount)} · page ${escapeHtml(String(vm.pagination.page))}/${escapeHtml(String(vm.pagination.totalPages))}</strong></div></div></article></section>
-    <section class="panel-grid two-col">
+    const sortDir = vm.queryState.sort.dir;
+    const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+    const sortHref = (field: string) => {
+      const q = new URLSearchParams(query);
+      q.set('sort', field);
+      q.set('dir', nextDir);
+      return `/trades?${q.toString()}`;
+    };
+
+    return `<section data-section="hero-metrics" class="metric-strip research">${metricCards}</section>
+    <section data-section="investigation-rail" class="panel-grid two-col">
       <article class="panel"><header><h3>Source Selection / Investigation Rail</h3><p>Choose source type and pivot into run detail/replay/backtest workflows.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Selected Source Mode</span><strong>${escapeHtml(vm.context.selectedSourceMode)}</strong></div>
         <div class="diag-row"><span>Selected Run ID</span><strong>${escapeHtml(vm.context.selectedRunId)}</strong></div>
         <div class="diag-row"><span>Detail Endpoint</span><strong>${escapeHtml(vm.context.selectedDetailEndpoint)}</strong></div>
-        <div class="diag-row"><span>Result Filters</span><strong>${vm.investigationRail.filters.map((f) => escapeHtml(f)).join(' · ')}</strong></div>
-        <div class="diag-row"><span>Reason Filter</span><strong>${statusBadge(vm.investigationRail.reasonFilterAvailability.status)} ${escapeHtml(vm.investigationRail.reasonFilterAvailability.reason ?? '')}</strong></div>
-        <div class="diag-row"><span>Bridge Links</span><strong>${vm.investigationRail.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
       </div></article>
       <article class="panel"><header><h3>Outcome / Distribution</h3><p>Wins/losses and reason frequency summary from surfaced trade rows.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Wins / Losses</span><strong>${escapeHtml(vm.outcome.winsVsLosses)}</strong></div>
-        <div class="diag-row"><span>Avg Win</span><strong>${escapeHtml(vm.outcome.avgWin)}</strong></div>
-        <div class="diag-row"><span>Avg Loss</span><strong>${escapeHtml(vm.outcome.avgLoss)}</strong></div>
-        <div class="diag-row"><span>PnL Range</span><strong>${escapeHtml(vm.outcome.pnlRange)}</strong></div>
         <div class="diag-row"><span>Reason Frequency</span><strong>${escapeHtml(vm.outcome.reasonFrequency)}</strong></div>
-        <div class="diag-row"><span>Exit Reason Summary</span><strong>${escapeHtml(vm.outcome.exitReasonSummary)}</strong></div>
       </div></article>
     </section>
-    <section class="panel-grid single-col"><article class="panel"><header><h3>Trade Investigation Table</h3><p>Normalized cross-source rows prepared for future pagination/virtualization.</p></header>
-      ${tradeRows ? `<table><thead><tr><th>Result</th><th>Side</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Exit</th><th>TP/SL</th><th>PnL Net</th><th>Fees</th><th>Reason</th><th>Opened</th><th>Closed</th><th>Source Run</th><th>Quick Actions</th></tr></thead><tbody>${tradeRows}</tbody></table>` : '<p class="muted">No trade rows surfaced from selected replay/backtest run details.</p>'}
+    <section data-section="trade-table" class="panel-grid single-col"><article class="panel"><header><h3>Trade Investigation Table</h3><p>Normalized cross-source rows with sorting + pagination foundation.</p></header>
+      ${tradeRows ? `<table><thead><tr><th><a href="${escapeHtml(sortHref('result'))}">Result</a></th><th>Side</th><th><a href="${escapeHtml(sortHref('symbol'))}">Symbol</a></th><th>Qty</th><th>Entry</th><th>Exit</th><th>TP/SL</th><th><a href="${escapeHtml(sortHref('pnl'))}">PnL Net</a></th><th>Fees</th><th>Reason</th><th><a href="${escapeHtml(sortHref('opened'))}">Opened</a></th><th><a href="${escapeHtml(sortHref('closed'))}">Closed</a></th><th>Source Run</th><th>Quick Actions</th></tr></thead><tbody>${tradeRows}</tbody></table>` : '<p class="muted">No trade rows surfaced from selected replay/backtest run details.</p>'}
+      ${renderPaginationBar('/trades', query, vm.pagination)}
     </article></section>
-    <section class="panel-grid two-col">
+    <section data-section="trade-inspector" class="panel-grid two-col">
       <article class="panel sticky-panel"><header><h3>Trade Inspector</h3><p>Selected/default trade lifecycle detail bridge.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Symbol / Side</span><strong>${escapeHtml(vm.inspector.symbol)} · ${escapeHtml(vm.inspector.side)}</strong></div>
         <div class="diag-row"><span>Entry / Exit</span><strong>${escapeHtml(vm.inspector.entry)} / ${escapeHtml(vm.inspector.exit)}</strong></div>
         <div class="diag-row"><span>PnL / Fees</span><strong>${escapeHtml(vm.inspector.pnl)} / ${escapeHtml(vm.inspector.fees)}</strong></div>
-        <div class="diag-row"><span>Reason / Result</span><strong>${escapeHtml(vm.inspector.reason)} / ${statusBadge(vm.inspector.result.label)}</strong></div>
-        <div class="diag-row"><span>Lifecycle</span><strong>${escapeHtml(vm.inspector.lifecycle)}</strong></div>
-        <div class="diag-row"><span>Run Source</span><strong>${escapeHtml(vm.inspector.runSource)}</strong></div>
-        <div class="diag-row"><span>Timestamps</span><strong>${escapeHtml(vm.inspector.opened)} → ${escapeHtml(vm.inspector.closed)}</strong></div>
-        <div class="diag-row"><span>TP / SL</span><strong>${escapeHtml(vm.inspector.tpSl)}</strong></div>
-        <div class="diag-row"><span>Bridge Links</span><strong>${vm.inspector.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
       </div></article>
-      <article class="panel"><header><h3>Timeline / Lifecycle Bridge</h3><p>Workflow bridge to replay/backtest/run detail debugging.</p></header><div class="diag-grid">
+      <article data-section="outcome-panel" class="panel"><header><h3>Timeline / Lifecycle Bridge</h3><p>Workflow bridge to replay/backtest/run detail debugging.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Workflow</span><strong>${escapeHtml(vm.timelineBridge.title)}</strong></div>
         ${vm.timelineBridge.notes.map((note) => `<p class="muted">• ${escapeHtml(note)}</p>`).join('')}
-        <div class="diag-row"><span>Links</span><strong>${vm.timelineBridge.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
       </div></article>
     </section>`;
   }
@@ -743,8 +780,9 @@ function renderPanels(page: FoundationPage): string {
     const safetyContext = sectionData(page, 'safety_query_context');
     const focus = String(safetyContext?.view ?? 'summary');
     const classFor = (key: string) => (focus === 'incidents' && key.includes('incident')) || (focus === 'lockout' && key.includes('safety_state')) ? 'panel-focus' : '';
-    return `<section class="panel-grid three-col">${page.sections.slice(0, 3).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>
-    <section class="panel-grid two-col">${page.sections.slice(3).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
+    return `<section data-section="safety-summary" class="panel-grid three-col">${page.sections.slice(0, 3).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>
+    <section data-section="incidents" class="panel-grid two-col">${page.sections.slice(3, 5).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>
+    <section data-section="lockouts" class="panel-grid single-col">${page.sections.slice(5).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
   }
 
   return `<section class="panel-grid two-col">${page.sections.map((section) => `<article class="panel" id="${escapeHtml(section.key)}">
@@ -753,7 +791,7 @@ function renderPanels(page: FoundationPage): string {
     </article>`).join('')}</section>`;
 }
 
-function renderPagePayload(path: string, payload: unknown): string {
+function renderPagePayload(path: string, payload: unknown, query: URLSearchParams = new URLSearchParams()): string {
   const page = asPage(payload);
   if (!page) {
     return `<!doctype html>
@@ -931,6 +969,13 @@ function renderPagePayload(path: string, payload: unknown): string {
       .goal-grid p { margin:0; color:#90a6ce; font-size:.76rem; text-transform:uppercase; letter-spacing:.06em; }
       .goal-grid h3 { margin:.35rem 0 0; }
       .trade-filters { padding:0 .85rem .55rem; display:flex; gap:.35rem; }
+      .pagination-bar { display:flex; justify-content:space-between; gap:.6rem; align-items:center; padding:.6rem .85rem; border-top:1px solid #1f2f4b; color:#9fb1d6; font-size:.82rem; }
+      .pagination-actions { display:flex; gap:.45rem; }
+      .nav-link.disabled { pointer-events:none; opacity:.5; }
+      .operator-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.6rem; margin:.7rem 0 .9rem; }
+      .operator-strip article { border:1px solid #2a3b5d; border-radius:10px; background:#0a1528; padding:.55rem .7rem; }
+      .operator-strip p { margin:0; color:#8fa4ca; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; }
+      .operator-strip h3 { margin:.35rem 0 0; font-size:.95rem; }
 
       .toast {
         position: fixed;
@@ -964,9 +1009,10 @@ function renderPagePayload(path: string, payload: unknown): string {
         <span class="readiness">Path: ${escapeHtml(page.path)} · Readiness: ${statusBadge(page.readiness)}</span>
         <span class="readiness">Clock: ${escapeHtml(new Date().toISOString())}</span>
       </div>
+      ${renderOperatorStatusStrip(page)}
       ${hero}
       ${renderControlRail(page.path)}
-      ${renderPanels(page)}
+      ${renderPanels(page, query)}
     </main>
     <aside id="toast" class="toast"></aside>
     <script>
@@ -1031,6 +1077,31 @@ function renderPagePayload(path: string, payload: unknown): string {
 </html>`;
 }
 
+function renderControlRoomSection(path: string, sectionKey: string, payload: unknown, query: URLSearchParams): string | undefined {
+  const page = asPage(payload);
+  if (!page) return undefined;
+
+  const supported: Record<string, Set<string>> = {
+    '/trades': new Set(['hero-metrics', 'investigation-rail', 'trade-table', 'trade-inspector', 'outcome-panel']),
+    '/runs': new Set(['hero-metrics', 'run-inventory', 'run-comparison', 'run-health']),
+    '/replay': new Set(['command-rail', 'metrics-strip', 'open-position', 'reasoning-panel', 'timeline', 'trades-table']),
+    '/backtest': new Set(['hero-metrics', 'launch-rail', 'performance-panel', 'outcomes-panel', 'run-analyzer']),
+    '/live': new Set(['positions', 'orders', 'health', 'incidents']),
+    '/safety': new Set(['safety-summary', 'incidents', 'lockouts']),
+  };
+
+  if (!supported[path]?.has(sectionKey)) {
+    return undefined;
+  }
+
+  const html = renderPanels(page, query);
+  const exact = new RegExp(`<section[^>]*data-section="${sectionKey}"[^>]*>[\\s\\S]*?<\/section>`);
+  const match = html.match(exact);
+  if (match) return match[0];
+
+  return html;
+}
+
 const server = createServer(async (req, res) => {
   const method = req.method === 'POST' ? 'POST' : 'GET';
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -1050,8 +1121,10 @@ const server = createServer(async (req, res) => {
 
     const payload = await getPagePayload(path, query);
     const statusCode = payload && typeof payload === 'object' && 'error' in payload ? 404 : 200;
+    const sectionKey = query.get('refresh')?.trim() ?? query.get('section')?.trim();
+    const fragment = sectionKey ? renderControlRoomSection(path, sectionKey, payload, query) : undefined;
     res.writeHead(statusCode, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(renderPagePayload(path, payload));
+    res.end(fragment ?? renderPagePayload(path, payload, query));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unexpected_error';
     res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
