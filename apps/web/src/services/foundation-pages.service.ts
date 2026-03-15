@@ -152,11 +152,14 @@ export class FoundationPagesService {
 
   getBacktestPage(): FoundationPage {
     const runs = this.instantBacktestService.listRuns({ limit: 100 });
+    const latestRun = runs.runs[0];
+    const activeRun = latestRun ? this.instantBacktestService.getRun(latestRun.runId) : { status: 'not_found' as const, message: 'No backtest run selected.' };
+    const launchConfig = this.queryService.getBacktestConfigs();
 
     return {
       path: '/backtest',
-      title: 'Backtest Runs & Trade Outcomes',
-      subtitle: 'Backtest run history with trade-centric review context and default assumptions.',
+      title: 'Backtest Research Lab',
+      subtitle: 'Operator-grade backtest analysis with explicit runtime-backed outcomes and evaluation context.',
       readiness: 'phase5_ready',
       sections: [
         createSection('runs', 'Backtest Runs', 'Backtest run summaries from repository.', {
@@ -165,6 +168,8 @@ export class FoundationPagesService {
           count: runs.runs.length,
           emptyStateMessage: runs.runs.length === 0 ? 'No backtest runs found. Start with `pnpm smoke:backtest` or POST /api/backtests.' : undefined
         }),
+        createSection('active_run', 'Selected Backtest Run', 'Most recent run detail for deep performance and trade analysis.', activeRun),
+        createSection('launch_context', 'Launch Context', 'Datasets and defaults available to launch additional deterministic runs.', launchConfig),
         createSection('trades', 'Trades Review Hints', 'How to read trade outcomes and avoid common misreads.', {
           notes: [
             'Use netPnL and win-rate together; avoid judging strategy health from one run.',
@@ -172,7 +177,13 @@ export class FoundationPagesService {
             'For deterministic bar-by-bar investigation, move to replay for the same symbol/timeframe.'
           ]
         }),
-        createSection('defaults', 'Backtest Defaults', 'Default backtest assumptions for instant runs.', this.queryService.getBacktestConfigs())
+        createSection('defaults', 'Backtest Defaults', 'Default backtest assumptions for instant runs.', launchConfig),
+        createSection('cross_navigation', 'Research Workflow Bridge', 'Cross-navigation toward trade inspection and replay timeline workflows.', {
+          tradesReviewPath: '/trades',
+          replayLabPath: '/replay',
+          runsConsolePath: '/runs',
+          backtestDetailTemplate: '/api/backtests/{runId}'
+        })
       ]
     };
   }
