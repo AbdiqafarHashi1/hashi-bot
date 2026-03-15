@@ -1,3 +1,4 @@
+import { buildHref, normalizeResultFilter, shapePagination, type PaginationViewModel, type QueryStateViewModel, type SectionRenderState } from './control-room-query-state.js';
 export interface PanelAvailability {
   status: 'available' | 'unavailable' | 'empty';
   reason?: string;
@@ -440,7 +441,20 @@ export interface OutcomeSummaryBlock {
   availability: PanelAvailability;
 }
 
+export interface ActiveFilterSummary {
+  mode: string;
+  run: string;
+  result: string;
+  reason: string;
+  sourceCount: string;
+  rowCount: string;
+}
+
 export interface TradesReviewViewModel {
+  queryState: QueryStateViewModel;
+  sectionRender: SectionRenderState;
+  pagination: PaginationViewModel;
+  filterSummary: ActiveFilterSummary;
   context: {
     replaySources: string;
     backtestSources: string;
@@ -493,6 +507,15 @@ export interface RunComparisonSummary {
 }
 
 export interface RunsIntelligenceViewModel {
+  queryState: QueryStateViewModel;
+  sectionRender: SectionRenderState;
+  pagination: PaginationViewModel;
+  dispatchSummary: {
+    selectedMode: string;
+    selectedRun: string;
+    inventoryState: string;
+    nextAction: string;
+  };
   context: {
     replayRunCount: string;
     backtestRunCount: string;
@@ -574,14 +597,15 @@ function parseTradeRowsFromRun(mode: 'replay' | 'backtest', runId: string, runDe
 
 function parseRunRows(inventorySection: GenericRecord | undefined): RunInventoryRowViewModel[] {
   const items = asArray(inventorySection?.items).filter((item): item is GenericRecord => typeof item === 'object' && item !== null);
-  return items.slice(0, 1000).map((run) => {
+  return items.slice(0, 2500).map((run) => {
     const mode = run.mode === 'replay' ? 'replay' : 'backtest';
     const createdTs = numericMaybe(run.startedAtTs);
     const completedTs = numericMaybe(run.completedAtTs);
     const net = numericMaybe(run.netPnl);
     const winRate = numericMaybe(run.winRatePct);
+    const runId = text(run.runId);
     return {
-      runId: text(run.runId),
+      runId,
       mode,
       dataset: text(run.datasetId),
       profile: text(run.profileCode),
@@ -596,9 +620,10 @@ function parseRunRows(inventorySection: GenericRecord | undefined): RunInventory
       winRate: pct(winRate),
       winRateRaw: winRate,
       quickActions: [
-        { label: 'Open Trades Review', href: '/trades' },
-        { label: mode === 'replay' ? 'Inspect Replay' : 'Inspect Backtest', href: mode === 'replay' ? '/replay' : '/backtest' },
-        { label: 'Detail Endpoint', href: mode === 'replay' ? `/api/replay/${encodeURIComponent(text(run.runId))}` : `/api/backtests/${encodeURIComponent(text(run.runId))}` },
+        { label: 'Review trades', href: buildHref('/trades', { mode, runId }) },
+        { label: 'Open replay', href: buildHref('/replay', { runId: mode === 'replay' ? runId : undefined }) },
+        { label: 'Open backtest', href: buildHref('/backtest', { runId: mode === 'backtest' ? runId : undefined }) },
+        { label: 'Detail endpoint', href: mode === 'replay' ? `/api/replay/${encodeURIComponent(runId)}` : `/api/backtests/${encodeURIComponent(runId)}` },
       ],
     };
   });
@@ -607,6 +632,7 @@ function parseRunRows(inventorySection: GenericRecord | undefined): RunInventory
 export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewViewModel {
   const page = asRecord(pagePayload) ?? {};
   const sourceSection = findSection(page, 'trade_sources');
+  const querySection = findSection(page, 'query_state');
   const replayCandidates = asArray(findSectionData(page, 'replay_run_candidates')).filter((item): item is GenericRecord => typeof item === 'object' && item !== null);
   const backtestCandidates = asArray(findSectionData(page, 'backtest_run_candidates')).filter((item): item is GenericRecord => typeof item === 'object' && item !== null);
   const selectedReplayRun = findSection(page, 'selected_replay_run');
@@ -614,53 +640,83 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
 
   const selectedMode = text(sourceSection?.selectedSourceMode, 'none');
   const selectedRunId = text(sourceSection?.selectedRunId, 'none');
+  const resultFilter = normalizeResultFilter(text(querySection?.result, 'all'));
+  const reasonFilter = text(querySection?.reason, 'none');
+
   const detailEndpoint = selectedMode === 'replay'
     ? text(sourceSection?.replayDetailEndpointTemplate).replace('{runId}', selectedRunId)
     : selectedMode === 'backtest'
       ? text(sourceSection?.backtestDetailEndpointTemplate).replace('{runId}', selectedRunId)
       : '—';
 
-  const replayRows = selectedReplayRun ? parseTradeRowsFromRun('replay', text(replayCandidates[0]?.runId), selectedReplayRun) : [];
-  const backtestRows = selectedBacktestRun ? parseTradeRowsFromRun('backtest', text(backtestCandidates[0]?.runId), selectedBacktestRun) : [];
-  const allRows = [...backtestRows, ...replayRows];
+  const replayRows = selectedReplayRun ? parseTradeRowsFromRun('replay', text(selectedRunId), selectedReplayRun) : [];
+  const backtestRows = selectedBacktestRun ? parseTradeRowsFromRun('backtest', text(selectedRunId), selectedBacktestRun) : [];
+  const sourceFiltered = selectedMode === 'replay' ? replayRows : selectedMode === 'backtest' ? backtestRows : [...backtestRows, ...replayRows];
+  const resultFiltered = sourceFiltered.filter((row) => {
+    if (resultFilter === 'all') return true;
+    if (resultFilter === 'wins') return row.result.label === 'win';
+    if (resultFilter === 'losses') return row.result.label === 'loss';
+    return row.result.label === 'breakeven';
+  });
+  const selected = resultFiltered[0];
 
-  const wins = allRows.filter((row) => row.pnlRaw !== undefined && row.pnlRaw > 0);
-  const losses = allRows.filter((row) => row.pnlRaw !== undefined && row.pnlRaw < 0);
-  const breakeven = allRows.filter((row) => row.pnlRaw !== undefined && row.pnlRaw === 0);
+  const pageNum = Math.max(1, Number(querySection?.page ?? 1));
+  const pageSize = Math.max(10, Math.min(200, Number(querySection?.pageSize ?? 50)));
+  const pagination = shapePagination(resultFiltered.length, pageNum, pageSize);
+  const pagedRows = resultFiltered.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
+
+  const wins = resultFiltered.filter((row) => row.pnlRaw !== undefined && row.pnlRaw > 0);
+  const losses = resultFiltered.filter((row) => row.pnlRaw !== undefined && row.pnlRaw < 0);
+  const breakeven = resultFiltered.filter((row) => row.pnlRaw !== undefined && row.pnlRaw === 0);
   const gross = wins.reduce((sum, row) => sum + (row.pnlRaw ?? 0), 0);
-  const totalNet = allRows.reduce((sum, row) => sum + (row.pnlRaw ?? 0), 0);
-  const feeValues = allRows
-    .map((row) => row.fees.replaceAll(',', ''))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-
-  const best = allRows.slice().sort((a, b) => (b.pnlRaw ?? -Infinity) - (a.pnlRaw ?? -Infinity))[0];
-  const worst = allRows.slice().sort((a, b) => (a.pnlRaw ?? Infinity) - (b.pnlRaw ?? Infinity))[0];
-  const selected = allRows[0];
+  const totalNet = resultFiltered.reduce((sum, row) => sum + (row.pnlRaw ?? 0), 0);
+  const feeValues = resultFiltered.map((row) => Number(row.fees.replaceAll(',', ''))).filter((value) => Number.isFinite(value));
+  const best = resultFiltered.slice().sort((a, b) => (b.pnlRaw ?? -Infinity) - (a.pnlRaw ?? -Infinity))[0];
+  const worst = resultFiltered.slice().sort((a, b) => (a.pnlRaw ?? Infinity) - (b.pnlRaw ?? Infinity))[0];
 
   const reasonCounts = new Map<string, number>();
-  for (const row of allRows) {
+  for (const row of resultFiltered) {
     reasonCounts.set(row.reason, (reasonCounts.get(row.reason) ?? 0) + 1);
   }
   const reasonSummary = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([reason, count]) => `${reason}: ${count}`).join(' · ');
 
   return {
+    queryState: {
+      mode: selectedMode === 'replay' || selectedMode === 'backtest' ? selectedMode : 'all',
+      runId: selectedRunId === 'none' ? undefined : selectedRunId,
+      result: resultFilter,
+      source: text(querySection?.selectedSource, ''),
+      reason: reasonFilter === 'none' ? undefined : reasonFilter,
+      sectionRender: { section: 'all' },
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+    },
+    sectionRender: { section: 'all' },
+    pagination,
+    filterSummary: {
+      mode: selectedMode,
+      run: selectedRunId,
+      result: resultFilter,
+      reason: reasonFilter,
+      sourceCount: `${replayCandidates.length + backtestCandidates.length}`,
+      rowCount: `${resultFiltered.length}`,
+    },
     context: {
       replaySources: numeric(sourceSection?.replayRunsAvailable),
       backtestSources: numeric(sourceSection?.backtestRunsAvailable),
       selectedSourceMode: selectedMode,
       selectedRunId,
       selectedDetailEndpoint: detailEndpoint,
-      reviewStatus: allRows.length > 0 ? 'review_ready' : 'empty',
+      reviewStatus: resultFiltered.length > 0 ? 'review_ready' : 'empty',
     },
     metrics: {
-      totalTrades: { key: 'total', label: 'Total Trades', value: numeric(allRows.length), tone: 'neutral', availability: { status: allRows.length ? 'available' : 'empty', reason: allRows.length ? undefined : 'No trade summaries surfaced in selected run details.' } },
-      wins: { key: 'wins', label: 'Wins', value: numeric(wins.length), tone: 'good', availability: { status: allRows.length ? 'available' : 'empty' } },
-      losses: { key: 'losses', label: 'Losses', value: numeric(losses.length), tone: 'bad', availability: { status: allRows.length ? 'available' : 'empty' } },
-      breakeven: { key: 'breakeven', label: 'Breakeven', value: numeric(breakeven.length), tone: 'warn', availability: { status: allRows.length ? 'available' : 'empty' } },
-      winRate: { key: 'winRate', label: 'Win Rate', value: allRows.length ? pct((wins.length / allRows.length) * 100) : '—', tone: 'neutral', availability: { status: allRows.length ? 'available' : 'empty' } },
-      totalNetPnl: { key: 'net', label: 'Total Net PnL', value: money(totalNet), tone: classifyResult(totalNet).tone, availability: { status: allRows.length ? 'available' : 'empty' } },
-      grossPnl: { key: 'gross', label: 'Gross PnL', value: money(gross), tone: classifyResult(gross).tone, availability: { status: allRows.length ? 'available' : 'empty' } },
+      totalTrades: { key: 'total', label: 'Total Trades', value: numeric(resultFiltered.length), tone: 'neutral', availability: { status: resultFiltered.length ? 'available' : 'empty', reason: resultFiltered.length ? undefined : 'No trade summaries surfaced in selected run details.' } },
+      wins: { key: 'wins', label: 'Wins', value: numeric(wins.length), tone: 'good', availability: { status: resultFiltered.length ? 'available' : 'empty' } },
+      losses: { key: 'losses', label: 'Losses', value: numeric(losses.length), tone: 'bad', availability: { status: resultFiltered.length ? 'available' : 'empty' } },
+      breakeven: { key: 'breakeven', label: 'Breakeven', value: numeric(breakeven.length), tone: 'warn', availability: { status: resultFiltered.length ? 'available' : 'empty' } },
+      winRate: { key: 'winRate', label: 'Win Rate', value: resultFiltered.length ? pct((wins.length / resultFiltered.length) * 100) : '—', tone: 'neutral', availability: { status: resultFiltered.length ? 'available' : 'empty' } },
+      totalNetPnl: { key: 'net', label: 'Total Net PnL', value: money(totalNet), tone: classifyResult(totalNet).tone, availability: { status: resultFiltered.length ? 'available' : 'empty' } },
+      grossPnl: { key: 'gross', label: 'Gross PnL', value: money(gross), tone: classifyResult(gross).tone, availability: { status: resultFiltered.length ? 'available' : 'empty' } },
       fees: { key: 'fees', label: 'Fees', value: feeValues.length ? money(feeValues.reduce((sum, v) => sum + v, 0)) : 'not yet surfaced', tone: 'neutral', availability: feeValues.length ? { status: 'available' } : { status: 'unavailable', reason: 'Fees are not consistently surfaced on trade summaries.' } },
       avgWin: { key: 'avgWin', label: 'Average Win', value: money(avg(wins.map((row) => row.pnlRaw ?? 0))), tone: 'good', availability: wins.length ? { status: 'available' } : { status: 'empty', reason: 'No winning trades in current selection.' } },
       avgLoss: { key: 'avgLoss', label: 'Average Loss', value: money(avg(losses.map((row) => row.pnlRaw ?? 0))), tone: 'bad', availability: losses.length ? { status: 'available' } : { status: 'empty', reason: 'No losing trades in current selection.' } },
@@ -671,14 +727,14 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
       replaySources: replayCandidates.map((row) => ({ runId: text(row.runId), status: text(row.status), createdAt: iso(row.startedAtTs) })),
       backtestSources: backtestCandidates.map((row) => ({ runId: text(row.runId), status: text(row.status), createdAt: iso(row.startedAtTs) })),
       filters: ['all', 'wins', 'losses', 'breakeven'],
-      reasonFilterAvailability: { status: 'unavailable', reason: 'Reason filter requires dedicated query/filter endpoint support.' },
+      reasonFilterAvailability: { status: reasonFilter !== 'none' ? 'unavailable' : 'unavailable', reason: reasonFilter !== 'none' ? `Reason filter query detected (${reasonFilter}) but runtime endpoint support is pending.` : 'Reason filter requires dedicated query/filter endpoint support.' },
       links: [
-        { label: 'Replay Lab', href: '/replay' },
-        { label: 'Backtest Lab', href: '/backtest' },
-        { label: 'Runs Intelligence', href: '/runs' },
+        { label: 'Replay Lab', href: buildHref('/replay', { runId: selectedMode === 'replay' ? selectedRunId : undefined }) },
+        { label: 'Backtest Lab', href: buildHref('/backtest', { runId: selectedMode === 'backtest' ? selectedRunId : undefined }) },
+        { label: 'Runs Intelligence', href: buildHref('/runs', { mode: selectedMode, runId: selectedRunId }) },
       ],
     },
-    tradeRows: allRows,
+    tradeRows: pagedRows,
     inspector: selected ? {
       symbol: selected.symbol,
       side: selected.side,
@@ -696,21 +752,7 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
       links: selected.quickActions,
       availability: { status: 'available' },
     } : {
-      symbol: '—',
-      side: '—',
-      entry: '—',
-      exit: '—',
-      pnl: '—',
-      fees: '—',
-      reason: '—',
-      result: { label: 'unavailable', tone: 'neutral' },
-      lifecycle: 'No trade selected.',
-      runSource: '—',
-      opened: '—',
-      closed: '—',
-      tpSl: '—',
-      links: [{ label: 'Open Runs', href: '/runs' }],
-      availability: { status: 'empty', reason: 'No trade row available for inspector.' },
+      symbol: '—', side: '—', entry: '—', exit: '—', pnl: '—', fees: '—', reason: '—', result: { label: 'unavailable', tone: 'neutral' }, lifecycle: 'No trade selected.', runSource: '—', opened: '—', closed: '—', tpSl: '—', links: [{ label: 'Open Runs', href: '/runs' }], availability: { status: 'empty', reason: 'No trade row available for inspector.' },
     },
     outcome: {
       winsVsLosses: `${wins.length} / ${losses.length}`,
@@ -719,28 +761,27 @@ export function createTradesReviewViewModel(pagePayload: unknown): TradesReviewV
       pnlRange: best && worst ? `${money(worst.pnlRaw)} → ${money(best.pnlRaw)}` : '—',
       reasonFrequency: reasonSummary || 'not yet surfaced',
       exitReasonSummary: reasonSummary || 'not yet surfaced',
-      availability: allRows.length ? { status: 'available' } : { status: 'empty', reason: 'Outcome distribution requires surfaced trade rows.' },
+      availability: resultFiltered.length ? { status: 'available' } : { status: 'empty', reason: 'Outcome distribution requires surfaced trade rows.' },
     },
     timelineBridge: {
-      title: 'Lifecycle Debug Workflow',
+      title: selectedMode === 'replay' ? 'reviewing replay run' : selectedMode === 'backtest' ? 'reviewing backtest run' : 'cross-source review',
       notes: [
-        'Use Trades Review to triage winners/losers and close reasons quickly.',
+        resultFilter === 'all' ? 'Reviewing all outcomes for selected run/source.' : `filtering ${resultFilter} trades`,
         'Use Replay Lab for bar-by-bar lifecycle and control timeline investigation.',
         'Use Backtest Lab for deterministic aggregate research and regime-level checks.',
       ],
       links: [
-        { label: 'Open Replay Lab', href: '/replay' },
-        { label: 'Open Backtest Lab', href: '/backtest' },
-        { label: 'Open Runs Intelligence', href: '/runs' },
+        { label: 'Open Replay Lab', href: buildHref('/replay', { runId: selectedMode === 'replay' ? selectedRunId : undefined }) },
+        { label: 'Open Backtest Lab', href: buildHref('/backtest', { runId: selectedMode === 'backtest' ? selectedRunId : undefined }) },
+        { label: 'Live Positions', href: buildHref('/live', { section: 'positions' }) },
+        { label: 'Safety Incidents', href: buildHref('/safety', { view: 'incidents' }) },
       ],
     },
-    emptyState: allRows.length
-      ? undefined
-      : {
-        title: 'No Trades Surfaced Yet',
-        detail: 'Selected replay/backtest run details did not expose tradeSummaries. Launch or complete runs to populate trade review.',
-        availability: { status: 'empty' },
-      },
+    emptyState: resultFiltered.length ? undefined : {
+      title: 'No Trades Surfaced Yet',
+      detail: 'Selected replay/backtest run details did not expose tradeSummaries. Launch or complete runs to populate trade review.',
+      availability: { status: 'empty' },
+    },
   };
 }
 
@@ -749,7 +790,18 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
   const replayRuns = findSection(page, 'replay_runs');
   const backtestRuns = findSection(page, 'backtest_runs');
   const inventory = findSection(page, 'run_inventory');
+  const querySection = findSection(page, 'query_state');
+  const dispatchActions = findSection(page, 'run_dispatch_actions');
   const rows = parseRunRows(inventory);
+
+  const mode = text(querySection?.mode, 'all');
+  const selectedRunId = text(querySection?.selectedRunId, rows[0]?.runId ?? 'none');
+  const selectedRun = rows.find((row) => row.runId === selectedRunId);
+
+  const pageNum = Math.max(1, Number(querySection?.page ?? 1));
+  const pageSize = Math.max(10, Math.min(200, Number(querySection?.pageSize ?? 50)));
+  const pagination = shapePagination(rows.length, pageNum, pageSize);
+  const pageRows = rows.slice((pagination.page - 1) * pagination.pageSize, pagination.page * pagination.pageSize);
 
   const completed = rows.filter((row) => row.status === 'completed').length;
   const failed = rows.filter((row) => row.status.includes('fail') || row.status.includes('error')).length;
@@ -763,20 +815,33 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
   const worst = rows.slice().sort((a, b) => (a.netPnlRaw ?? Infinity) - (b.netPnlRaw ?? Infinity))[0];
   const highestWr = rows.slice().sort((a, b) => (b.winRateRaw ?? -Infinity) - (a.winRateRaw ?? -Infinity))[0];
   const highestTrades = rows.slice().sort((a, b) => Number(b.totalTrades.replaceAll(',', '')) - Number(a.totalTrades.replaceAll(',', '')))[0];
-  const latestCompleted = rows
-    .filter((row) => row.completedAt !== '—')
-    .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))[0];
+  const latestCompleted = rows.filter((row) => row.completedAt !== '—').sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))[0];
   const latestReplay = rows.filter((row) => row.mode === 'replay').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
   const latestBacktest = rows.filter((row) => row.mode === 'backtest').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
-
   const latestTs = rows.map((row) => row.completedAt !== '—' ? row.completedAt : row.createdAt).find((v) => v !== '—') ?? '—';
 
   return {
+    queryState: {
+      mode: mode === 'replay' || mode === 'backtest' ? mode : 'all',
+      runId: selectedRun?.runId,
+      result: 'all',
+      sectionRender: { section: 'all' },
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+    },
+    sectionRender: { section: 'all' },
+    pagination,
+    dispatchSummary: {
+      selectedMode: mode,
+      selectedRun: selectedRun?.runId ?? 'none',
+      inventoryState: rows.length ? 'inventory populated' : 'inventory empty',
+      nextAction: selectedRun ? 'Review trades or open run-specific lab links.' : 'Select a run to dispatch into trades/replay/backtest workflows.',
+    },
     context: {
       replayRunCount: numeric(asArray(replayRuns?.runs).length),
       backtestRunCount: numeric(asArray(backtestRuns?.runs).length),
       totalRuns: numeric(rows.length),
-      selectedMode: 'cross_mode',
+      selectedMode: mode,
       latestRunTs: latestTs,
       status: rows.length ? 'inventory_ready' : 'empty',
     },
@@ -792,7 +857,7 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
       { key: 'avgWinRate', label: 'Average Win Rate', value: pct(avg(winRateVals)), tone: 'neutral', availability: winRateVals.length ? { status: 'available' } : { status: 'unavailable', reason: 'Average win rate unavailable when run payload lacks winRatePct.' } },
       { key: 'reviewReady', label: 'Review-Ready Runs', value: numeric(completed), tone: 'good', availability: { status: rows.length ? 'available' : 'empty' } },
     ],
-    inventoryRows: rows,
+    inventoryRows: pageRows,
     comparison: {
       bestRun: best ? `${best.runId} (${best.netPnl})` : '—',
       worstRun: worst ? `${worst.runId} (${worst.netPnl})` : '—',
@@ -807,15 +872,17 @@ export function createRunsIntelligenceViewModel(pagePayload: unknown): RunsIntel
       replayVsBacktest: `${replayCount} replay / ${backtestCount} backtest`,
       emptyGuidance: rows.length ? 'Inventory populated. Use quick actions to pivot into run/trade detail.' : 'No runs surfaced yet. Launch replay/backtest smoke flows to populate inventory.',
       operatorNotes: [
-        'Use Trades Review to inspect outcome distribution before deep timeline analysis.',
-        'Use Replay for lifecycle debugging and control actions.',
-        'Use Backtest for deterministic run-level aggregate inspection.',
+        `viewing ${mode} mode inventory`,
+        selectedRun ? `selected run ${selectedRun.runId}` : 'no run selected — showing default inventory state',
+        text(querySection?.contextNote, 'Dispatch into trades/replay/backtest using quick actions.'),
       ],
     },
     crossNavigation: [
-      { label: 'Open Trades Review', href: '/trades' },
-      { label: 'Open Replay Lab', href: '/replay' },
-      { label: 'Open Backtest Lab', href: '/backtest' },
+      { label: 'Open Trades Review', href: buildHref('/trades', { mode, runId: selectedRun?.runId }) },
+      { label: 'Open Replay Lab', href: buildHref('/replay', { runId: selectedRun?.mode === 'replay' ? selectedRun.runId : undefined }) },
+      { label: 'Open Backtest Lab', href: buildHref('/backtest', { runId: selectedRun?.mode === 'backtest' ? selectedRun.runId : undefined }) },
+      { label: 'Live Positions', href: buildHref('/live', { section: 'positions' }) },
+      { label: 'Safety Incidents', href: buildHref('/safety', { view: 'incidents' }) },
     ],
     emptyState: rows.length ? undefined : {
       title: 'No Runs in Inventory',

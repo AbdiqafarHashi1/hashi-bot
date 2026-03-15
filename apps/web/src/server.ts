@@ -624,11 +624,13 @@ function renderPanels(page: FoundationPage): string {
     const orders = sectionData(page, 'orders');
     const positions = sectionData(page, 'positions');
     const incidents = sectionData(page, 'incidents');
+    const liveContext = sectionData(page, 'operator_context');
+    const focus = String(liveContext?.sectionFocus ?? 'summary');
 
     return `<section class="panel-grid three-col">
-      <article class="panel"><header><h3>Orders</h3><p>Open orders snapshot.</p></header>${renderJsonBlock(orders ?? {})}</article>
-      <article class="panel"><header><h3>Positions</h3><p>Open positions snapshot.</p></header>${renderJsonBlock(positions ?? {})}</article>
-      <article class="panel"><header><h3>Incidents</h3><p>Latest incident context.</p></header>${renderJsonBlock(incidents ?? {})}</article>
+      <article class="panel ${focus === 'orders' ? 'panel-focus' : ''}"><header><h3>Orders</h3><p>Open orders snapshot.</p></header>${renderJsonBlock(orders ?? {})}</article>
+      <article class="panel ${focus === 'positions' ? 'panel-focus' : ''}"><header><h3>Positions</h3><p>Open positions snapshot.</p></header>${renderJsonBlock(positions ?? {})}</article>
+      <article class="panel ${focus === 'incidents' ? 'panel-focus' : ''}"><header><h3>Incidents</h3><p>Latest incident context.</p></header>${renderJsonBlock(incidents ?? {})}</article>
     </section>
     <section class="panel-grid two-col">${page.sections
       .filter((section) => !['orders', 'positions', 'incidents', 'venue_summary'].includes(section.key))
@@ -662,6 +664,7 @@ function renderPanels(page: FoundationPage): string {
         ${rows ? `<table><thead><tr><th>Run ID</th><th>Mode</th><th>Dataset</th><th>Profile</th><th>TF</th><th>Symbols</th><th>Status</th><th>Created</th><th>Completed</th><th>Trades</th><th>Net PnL</th><th>Win Rate</th><th>Quick Actions</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No run inventory rows surfaced.</p>'}
       </article>
     </section>
+    <section class="panel-grid single-col"><article class="panel"><header><h3>Dispatch Summary</h3><p>Mode/run selection and next operator step.</p></header><div class="diag-grid"><div class="diag-row"><span>Mode</span><strong>${escapeHtml(vm.dispatchSummary.selectedMode)}</strong></div><div class="diag-row"><span>Selected Run</span><strong>${escapeHtml(vm.dispatchSummary.selectedRun)}</strong></div><div class="diag-row"><span>Inventory</span><strong>${escapeHtml(vm.dispatchSummary.inventoryState)}</strong></div><div class="diag-row"><span>Next</span><strong>${escapeHtml(vm.dispatchSummary.nextAction)}</strong></div><div class="diag-row"><span>Rows</span><strong>${escapeHtml(String(vm.pagination.rowStart))}-${escapeHtml(String(vm.pagination.rowEnd))} / ${escapeHtml(String(vm.pagination.totalRows))}</strong></div></div></article></section>
     <section class="panel-grid two-col">
       <article class="panel"><header><h3>Run Comparison</h3><p>Best/worst and latest surfaced run references.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Best Run</span><strong>${escapeHtml(vm.comparison.bestRun)}</strong></div>
@@ -694,6 +697,7 @@ function renderPanels(page: FoundationPage): string {
     </tr>`).join('');
 
     return `<section class="metric-strip research">${metricCards}</section>
+    <section class="panel-grid single-col"><article class="panel"><header><h3>Active Filter Summary</h3><p>Current mode/run/result/reason state and row window.</p></header><div class="diag-grid"><div class="diag-row"><span>Mode</span><strong>${escapeHtml(vm.filterSummary.mode)}</strong></div><div class="diag-row"><span>Run</span><strong>${escapeHtml(vm.filterSummary.run)}</strong></div><div class="diag-row"><span>Result</span><strong>${escapeHtml(vm.filterSummary.result)}</strong></div><div class="diag-row"><span>Reason</span><strong>${escapeHtml(vm.filterSummary.reason)}</strong></div><div class="diag-row"><span>Rows</span><strong>${escapeHtml(vm.filterSummary.rowCount)} · page ${escapeHtml(String(vm.pagination.page))}/${escapeHtml(String(vm.pagination.totalPages))}</strong></div></div></article></section>
     <section class="panel-grid two-col">
       <article class="panel"><header><h3>Source Selection / Investigation Rail</h3><p>Choose source type and pivot into run detail/replay/backtest workflows.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Selected Source Mode</span><strong>${escapeHtml(vm.context.selectedSourceMode)}</strong></div>
@@ -716,7 +720,7 @@ function renderPanels(page: FoundationPage): string {
       ${tradeRows ? `<table><thead><tr><th>Result</th><th>Side</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Exit</th><th>TP/SL</th><th>PnL Net</th><th>Fees</th><th>Reason</th><th>Opened</th><th>Closed</th><th>Source Run</th><th>Quick Actions</th></tr></thead><tbody>${tradeRows}</tbody></table>` : '<p class="muted">No trade rows surfaced from selected replay/backtest run details.</p>'}
     </article></section>
     <section class="panel-grid two-col">
-      <article class="panel"><header><h3>Trade Inspector</h3><p>Selected/default trade lifecycle detail bridge.</p></header><div class="diag-grid">
+      <article class="panel sticky-panel"><header><h3>Trade Inspector</h3><p>Selected/default trade lifecycle detail bridge.</p></header><div class="diag-grid">
         <div class="diag-row"><span>Symbol / Side</span><strong>${escapeHtml(vm.inspector.symbol)} · ${escapeHtml(vm.inspector.side)}</strong></div>
         <div class="diag-row"><span>Entry / Exit</span><strong>${escapeHtml(vm.inspector.entry)} / ${escapeHtml(vm.inspector.exit)}</strong></div>
         <div class="diag-row"><span>PnL / Fees</span><strong>${escapeHtml(vm.inspector.pnl)} / ${escapeHtml(vm.inspector.fees)}</strong></div>
@@ -736,8 +740,11 @@ function renderPanels(page: FoundationPage): string {
   }
 
   if (page.path === '/safety') {
-    return `<section class="panel-grid three-col">${page.sections.slice(0, 3).map((section) => `<article class="panel"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>
-    <section class="panel-grid two-col">${page.sections.slice(3).map((section) => `<article class="panel"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
+    const safetyContext = sectionData(page, 'safety_query_context');
+    const focus = String(safetyContext?.view ?? 'summary');
+    const classFor = (key: string) => (focus === 'incidents' && key.includes('incident')) || (focus === 'lockout' && key.includes('safety_state')) ? 'panel-focus' : '';
+    return `<section class="panel-grid three-col">${page.sections.slice(0, 3).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>
+    <section class="panel-grid two-col">${page.sections.slice(3).map((section) => `<article class="panel ${classFor(section.key)}"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
   }
 
   return `<section class="panel-grid two-col">${page.sections.map((section) => `<article class="panel" id="${escapeHtml(section.key)}">
@@ -872,6 +879,8 @@ function renderPagePayload(path: string, payload: unknown): string {
         overflow: hidden;
       }
       .panel header { padding: .75rem .85rem; border-bottom:1px solid #22324f; }
+      .sticky-panel { position: sticky; top: 1rem; align-self: start; }
+      .panel-focus { border-color:#4c74be; box-shadow:0 0 0 1px rgba(76,116,190,.45); }
       .panel h3 { margin:0; font-size:1rem; }
       .panel h4 { margin:.4rem 0; font-size:.9rem; color:#ccd9f3; }
       .panel header p { margin:.34rem 0 0; color:#8fa4ca; font-size:.84rem; }
@@ -1026,6 +1035,7 @@ const server = createServer(async (req, res) => {
   const method = req.method === 'POST' ? 'POST' : 'GET';
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const path = url.pathname;
+  const query = url.searchParams;
 
   try {
     const body = method === 'POST' ? await readRequestBody(req) : undefined;
@@ -1038,7 +1048,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    const payload = await getPagePayload(path);
+    const payload = await getPagePayload(path, query);
     const statusCode = payload && typeof payload === 'object' && 'error' in payload ? 404 : 200;
     res.writeHead(statusCode, { 'content-type': 'text/html; charset=utf-8' });
     res.end(renderPagePayload(path, payload));
