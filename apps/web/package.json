@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/server.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "dev": "tsx watch ./src/index.ts",
+    "dev": "tsx watch ./src/server.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -b",
     "lint": "echo 'No lint configured for @hashi-bot/web yet'",

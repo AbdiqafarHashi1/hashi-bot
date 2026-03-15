@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -62,6 +66,13 @@ importers:
       '@hashi-bot/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
+    devDependencies:
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
 
   packages/backtest:
     dependencies:
@@ -309,6 +320,10 @@ packages:
     resolution: {integrity: sha512-uOIOrC0M6Y1uWI1Oflcx4LI9ssVEao3fcR7fpMyfwlvepmy0zlRziBWs/cXbi5YiiQEa48lMhMG72SnOJhYVzA==}
     engines: {node: '>=15.0.0'}
 
+  dotenv@17.3.1:
+    resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
+    engines: {node: '>=12'}
+
   esbuild@0.27.3:
     resolution: {integrity: sha512-8VwMnyGCONIs6cWue2IdpHxHnAjzxnw2Zr7MkVxB2vjmQ2ivqGFb4LEG3SMnv0Gb2F/G/2yA8zUaiL1gywDCCg==}
     engines: {node: '>=18'}
@@ -477,6 +492,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  dotenv@17.3.1: {}
 
   esbuild@0.27.3:
     optionalDependencies:
