@@ -21,3 +21,15 @@ export async function getLivePageRoute() {
 export async function getSettingsPageRoute() {
   return pagesService.getSettingsPage();
 }
+
+export function getRunsPageRoute() {
+  return pagesService.getRunsPage();
+}
+
+export function getTradesPageRoute() {
+  return pagesService.getTradesPage();
+}
+
+export async function getSafetyPageRoute() {
+  return pagesService.getSafetyPage();
+}

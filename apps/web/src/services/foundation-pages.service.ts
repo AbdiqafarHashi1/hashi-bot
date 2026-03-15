@@ -226,6 +226,88 @@ export class FoundationPagesService {
     };
   }
 
+  getRunsPage(): FoundationPage {
+    const replayRuns = this.replayApiService.listRuns({ limit: 100 });
+    const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
+
+    return {
+      path: '/runs',
+      title: 'Runs Review Console',
+      subtitle: 'Cross-mode run visibility for replay and instant backtest workflows.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('replay_runs', 'Replay Runs', 'Replay run summaries and statuses.', replayRuns),
+        createSection('backtest_runs', 'Backtest Runs', 'Backtest run summaries and statuses.', backtestRuns),
+        createSection('run_api_paths', 'Run API Paths', 'Operator routes for run retrieval and control.', {
+          replayList: '/api/replay',
+          replayDetailTemplate: '/api/replay/{runId}',
+          replayControlTemplate: '/api/replay/{runId}/control',
+          backtestList: '/api/backtests',
+          backtestDetailTemplate: '/api/backtests/{runId}'
+        })
+      ]
+    };
+  }
+
+  getTradesPage(): FoundationPage {
+    const replayRuns = this.replayApiService.listRuns({ limit: 100 });
+    const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
+    const replayCandidates = replayRuns.runs.slice(0, 10);
+    const backtestCandidates = backtestRuns.runs.slice(0, 10);
+
+    return {
+      path: '/trades',
+      title: 'Trades Review',
+      subtitle: 'Trade outcome review surface from replay/backtest run records.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('trade_sources', 'Trade Data Sources', 'Current run sources that expose trade summaries.', {
+          replayRunsAvailable: replayRuns.runs.length,
+          backtestRunsAvailable: backtestRuns.runs.length,
+          replayDetailEndpointTemplate: '/api/replay/{runId}',
+          backtestDetailEndpointTemplate: '/api/backtests/{runId}',
+          note: 'Trade-level detail is available on run detail endpoints. Dedicated trade query APIs are a thin-glue follow-up.'
+        }),
+        createSection('replay_run_candidates', 'Replay Run Candidates', 'Replay runs to inspect for timeline/trade lifecycle review.', replayCandidates),
+        createSection('backtest_run_candidates', 'Backtest Run Candidates', 'Backtest runs to inspect for deterministic trade outcomes.', backtestCandidates)
+      ]
+    };
+  }
+
+  async getSafetyPage(): Promise<FoundationPage> {
+    const [live, health, incidents, safety] = await Promise.all([
+      this.liveStatusService.getLiveState(),
+      this.liveStatusService.getHealth(),
+      this.liveStatusService.getIncidents(),
+      this.liveStatusService.getSafety()
+    ]);
+
+    return {
+      path: '/safety',
+      title: 'Safety & Incident Command View',
+      subtitle: 'Operational guardrails, lockouts, incident feeds, and emergency visibility.',
+      readiness: 'phase5_ready',
+      sections: [
+        createSection('safety_mode', 'Mode + Venue State', 'Mode, venue, and adapter state context.', {
+          status: live.status,
+          mode: live.mode,
+          venue: live.venue,
+          accountRef: live.accountRef,
+          adapterReady: live.adapterReady,
+          latestSyncTs: live.latestSyncTs
+        }),
+        createSection('safety_health', 'Health Summary', 'Adapter health and incident counters.', health),
+        createSection('safety_state', 'Safety State', 'Persisted runtime safety lockout/recovery state.', safety),
+        createSection('incident_feed', 'Incident Feed', 'Latest incident feed and operational notes.', incidents),
+        createSection('emergency_visibility', 'Emergency Controls (Visibility-Only)', 'Web endpoint remains visibility-only for safety.', {
+          endpoint: 'POST /api/live/emergency',
+          behavior: 'visibility_only_non_executing',
+          supportedCommands: ['acknowledge_incident', 'cancel_all_orders', 'flatten_positions', 'disable_live_mode']
+        })
+      ]
+    };
+  }
+
   async getSettingsPage(): Promise<FoundationPage> {
     const symbols = this.queryService.getSymbols();
     const config = this.queryService.getConfig();

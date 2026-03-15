@@ -30,7 +30,10 @@ import {
   getLivePageRoute,
   getOverviewPageRoute,
   getReplayPageRoute,
-  getSettingsPageRoute
+  getRunsPageRoute,
+  getSafetyPageRoute,
+  getSettingsPageRoute,
+  getTradesPageRoute
 } from './pages/routes.js';
 import { validateWebRuntimeEnvironment } from './lib/runtime-env.js';
 
@@ -209,16 +212,19 @@ export async function getPagePayload(path: string) {
       case '/':
       case '/overview':
       case '/signals':
-      case '/runs':
-      case '/trades':
         return getOverviewPageRoute();
+      case '/runs':
+        return getRunsPageRoute();
+      case '/trades':
+        return getTradesPageRoute();
       case '/replay':
         return getReplayPageRoute();
       case '/backtest':
         return getBacktestPageRoute();
       case '/live':
-      case '/safety':
         return getLivePageRoute();
+      case '/safety':
+        return getSafetyPageRoute();
       case '/settings':
         return getSettingsPageRoute();
       default:
