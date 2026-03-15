@@ -19,6 +19,13 @@ import { ReplayApiService } from './replay-api.service.js';
 
 const KNOWN_SETUPS = ['pullback:trend_pullback', 'pullback:pullback_v2', 'breakout:compression_breakout'] as const;
 
+function normalizePositiveInt(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(max, parsed);
+}
+
 export class FoundationPagesService {
   constructor(
     private readonly queryService: Phase2QueryService,
@@ -257,6 +264,10 @@ export class FoundationPagesService {
     const backtestRuns = this.instantBacktestService.listRuns({ limit: 200 });
     const mode = normalizeMode(query.get('mode')?.trim());
     const selectedRunId = query.get('runId')?.trim();
+    const page = normalizePositiveInt(query.get('page')?.trim(), 1, 500);
+    const pageSize = normalizePositiveInt(query.get('pageSize')?.trim(), 50, 200);
+    const sort = query.get('sort')?.trim();
+    const dir = query.get('dir')?.trim() === 'asc' ? 'asc' : 'desc';
 
     const combinedRuns = [
       ...replayRuns.runs.map((run) => ({ ...run, mode: 'replay' as const })),
@@ -276,6 +287,10 @@ export class FoundationPagesService {
         createSection('query_state', 'Dispatch Query State', 'Mode/run filters for run dispatch workflow.', {
           mode,
           selectedRunId: selectedRun?.runId ?? null,
+          page,
+          pageSize,
+          sort,
+          dir,
           contextNote: selectedRun ? 'selected run from runs inventory' : 'no run selected — showing default inventory state',
         }),
         createSection('replay_runs', 'Replay Runs', 'Replay run summaries and statuses.', replayRuns),
@@ -318,6 +333,10 @@ export class FoundationPagesService {
     const selectedRunId = query.get('runId')?.trim();
     const selectedSource = query.get('source')?.trim();
     const reason = query.get('reason')?.trim();
+    const page = normalizePositiveInt(query.get('page')?.trim(), 1, 500);
+    const pageSize = normalizePositiveInt(query.get('pageSize')?.trim(), 50, 200);
+    const sort = query.get('sort')?.trim();
+    const dir = query.get('dir')?.trim() === 'asc' ? 'asc' : 'desc';
 
     const replayCandidates = replayRuns.runs.slice(0, 50);
     const backtestCandidates = backtestRuns.runs.slice(0, 50);
@@ -341,6 +360,10 @@ export class FoundationPagesService {
         createSection('query_state', 'Operator Query State', 'Mode/result/run/source filters for review workflows.', {
           mode,
           result,
+          page,
+          pageSize,
+          sort,
+          dir,
           selectedRunId: selectedCandidate?.run.runId ?? null,
           selectedSource,
           reason: reason ?? null,
