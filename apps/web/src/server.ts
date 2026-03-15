@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 
 import { getApiRoutePayload, getPagePayload } from './index.js';
+import { createBacktestLabViewModel, type BacktestLabViewModel } from './pages/control-room-view-models.js';
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -193,17 +194,29 @@ function renderReplayHero(page: FoundationPage): string {
   </section>`;
 }
 
+function toneBadge(tone: 'good' | 'warn' | 'bad' | 'neutral'): string {
+  return `<span class="badge ${tone}">${escapeHtml(tone)}</span>`;
+}
+
 function renderBacktestHero(page: FoundationPage): string {
-  const runs = sectionData(page, 'runs');
-  const items = Array.isArray(runs?.items) ? runs.items : [];
-  const latest = items[0] && typeof items[0] === 'object' ? (items[0] as Record<string, unknown>) : undefined;
-  return `<section class="metric-strip">
-    <article><p>Backtests</p><h3>${safeNumber(items.length)}</h3></article>
-    <article><p>Latest Net PnL</p><h3>${safeNumber(latest?.netPnl)}</h3></article>
-    <article><p>Win Rate</p><h3>${safeNumber(latest?.winRatePct)}%</h3></article>
-    <article><p>Total Trades</p><h3>${safeNumber(latest?.totalTrades)}</h3></article>
-    <article><p>Status</p><h3>${statusBadge(String(latest?.status ?? 'unknown'))}</h3></article>
-  </section>`;
+  const vm = createBacktestLabViewModel(page as unknown as Record<string, unknown>);
+  const context = vm.commandContext;
+  const metricCards = vm.heroMetrics.map((metric) => `<article class="metric-card">
+    <p>${escapeHtml(metric.label)}</p>
+    <h3>${escapeHtml(metric.value)}</h3>
+    <div class="metric-meta">${toneBadge(metric.tone ?? 'neutral')} ${statusBadge(metric.availability.status)}${metric.availability.reason ? `<span class="muted">${escapeHtml(metric.availability.reason)}</span>` : ''}</div>
+  </article>`).join('');
+
+  return `<section class="command-context">
+    <article><p>Dataset</p><h3>${escapeHtml(context.dataset)}</h3></article>
+    <article><p>Symbols</p><h3>${escapeHtml(context.symbols)}</h3></article>
+    <article><p>Timeframe</p><h3>${escapeHtml(context.timeframe)}</h3></article>
+    <article><p>Profile</p><h3>${escapeHtml(context.profile)}</h3></article>
+    <article><p>Selected Run</p><h3>${escapeHtml(context.selectedRun)}</h3></article>
+    <article><p>Run Count</p><h3>${escapeHtml(context.runCount)}</h3></article>
+    <article><p>Status</p><h3>${statusBadge(context.status)}</h3></article>
+  </section>
+  <section class="metric-strip research">${metricCards}</section>`;
 }
 
 function renderLiveHero(page: FoundationPage): string {
@@ -422,19 +435,118 @@ function renderReplayCockpit(page: FoundationPage): string {
   </section>`;
 }
 
+
+function buildMiniSparkline(points: Array<{ x: number; y: number }>, stroke: string): string {
+  if (points.length === 0) {
+    return '<p class="muted">No series points available from runtime payload.</p>';
+  }
+
+  const width = 640;
+  const height = 180;
+  const minY = Math.min(...points.map((p) => p.y));
+  const maxY = Math.max(...points.map((p) => p.y));
+  const ySpan = maxY - minY || 1;
+  const xSpan = points.length - 1 || 1;
+
+  const path = points
+    .map((point, index) => {
+      const x = (index / xSpan) * width;
+      const y = height - ((point.y - minY) / ySpan) * height;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+
+  return `<svg viewBox="0 0 ${width} ${height}" class="chart-sparkline" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${stroke}" stroke-width="2"/></svg>`;
+}
+
+function renderBacktestLabPanels(page: FoundationPage): string {
+  const vm: BacktestLabViewModel = createBacktestLabViewModel(page as unknown as Record<string, unknown>);
+  const runRows = vm.runRows.slice(0, 120).map((row) => `<tr>
+    <td><code>${escapeHtml(row.runId)}</code></td>
+    <td>${escapeHtml(row.dataset)}</td>
+    <td>${escapeHtml(row.profile)}</td>
+    <td>${statusBadge(row.status)}</td>
+    <td>${escapeHtml(row.createdAt)}</td>
+    <td>${escapeHtml(row.completedAt)}</td>
+    <td class="num">${escapeHtml(row.netPnl)}</td>
+    <td class="num">${escapeHtml(row.winRate)}</td>
+    <td class="num">${escapeHtml(row.trades)}</td>
+    <td><a href="/api/backtests/${encodeURIComponent(row.runId)}">detail</a> · <a href="/replay">replay</a></td>
+  </tr>`).join('');
+
+  const tradeRows = vm.tradeRows.slice(0, 160).map((row) => `<tr>
+    <td>${escapeHtml(row.tradeId)}</td><td>${escapeHtml(row.symbol)}</td><td>${statusBadge(row.side)}</td><td>${escapeHtml(row.setup)}</td><td>${statusBadge(row.state)}</td><td>${escapeHtml(row.openedAt)}</td><td>${escapeHtml(row.closedAt)}</td><td class="num">${escapeHtml(row.netPnl)}</td><td>${escapeHtml(row.reason)}</td>
+  </tr>`).join('');
+
+  const evaluationRows = vm.evaluation.map((item) => `<div class="diag-row"><span>${escapeHtml(item.title)}</span><strong>${escapeHtml(item.value)}</strong>${toneBadge(item.tone)}${item.availability.reason ? `<span class="muted">${escapeHtml(item.availability.reason)}</span>` : ''}</div>`).join('');
+
+  return `<section class="panel-grid two-col">
+    <article class="panel">
+      <header><h3>Performance Panel</h3><p>Equity and drawdown layers prepared via normalized chart view-models.</p></header>
+      <div class="chart-wrap">
+        <p class="chart-label">${escapeHtml(vm.equitySeries.label)} · ${statusBadge(vm.equitySeries.availability.status)}</p>
+        ${buildMiniSparkline(vm.equitySeries.points, '#36d399')}
+      </div>
+      <div class="chart-wrap">
+        <p class="chart-label">${escapeHtml(vm.drawdownSeries.label)} · ${statusBadge(vm.drawdownSeries.availability.status)}</p>
+        ${buildMiniSparkline(vm.drawdownSeries.points, '#f59e0b')}
+      </div>
+      <div class="trade-filters"><span>${statusBadge('1W')}</span><span>${statusBadge('1M')}</span><span>${statusBadge('All')}</span></div>
+    </article>
+    <article class="panel">
+      <header><h3>Distribution / Outcomes</h3><p>Derived from selected run trade rows only.</p></header>
+      <div class="diag-grid">
+        <div class="diag-row"><span>Wins / Losses</span><strong>${escapeHtml(vm.distribution.winsLosses)}</strong></div>
+        <div class="diag-row"><span>Average Win</span><strong>${escapeHtml(vm.distribution.avgWin)}</strong></div>
+        <div class="diag-row"><span>Average Loss</span><strong>${escapeHtml(vm.distribution.avgLoss)}</strong></div>
+        <div class="diag-row"><span>Best Trade</span><strong>${escapeHtml(vm.distribution.bestTrade)}</strong></div>
+        <div class="diag-row"><span>Worst Trade</span><strong>${escapeHtml(vm.distribution.worstTrade)}</strong></div>
+        <div class="diag-row"><span>Trade Count by Reason</span><strong>${escapeHtml(vm.distribution.reasonSummary)}</strong><span class="muted">${escapeHtml(vm.distribution.pnlDistributionStatus.reason ?? '')}</span></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel-grid single-col">
+    <article class="panel">
+      <header><h3>Run Analyzer Table</h3><p>Large-table ready normalized run rows with cross-navigation actions.</p></header>
+      ${runRows ? `<table><thead><tr><th>Run ID</th><th>Dataset</th><th>Profile</th><th>Status</th><th>Created</th><th>Completed</th><th>Net PnL</th><th>Win Rate</th><th>Trades</th><th>Actions</th></tr></thead><tbody>${runRows}</tbody></table>` : '<p class="muted">No run rows available yet.</p>'}
+    </article>
+  </section>
+
+  <section class="panel-grid two-col">
+    <article class="panel">
+      <header><h3>Trade Review Bridge</h3><p>Bridge from backtest into trade and replay workflows.</p></header>
+      <div class="diag-grid">
+        <div class="diag-row"><span>Trades Review</span><strong><a href="/trades">Open in Trades Review</a></strong></div>
+        <div class="diag-row"><span>Replay Handoff</span><strong><a href="/replay">Inspect in Replay</a></strong></div>
+        <div class="diag-row"><span>Operator Guidance</span><strong>${escapeHtml(vm.commandContext.selectedRun === 'none selected' ? 'Select or launch a run to unlock trade/evaluation details.' : 'Run selected. Use analyzer rows to pivot into detail/replay.')}</strong></div>
+      </div>
+      <header><h3>Trade Sample (Selected Run)</h3><p>First rows from normalized trade review model.</p></header>
+      ${tradeRows ? `<table><thead><tr><th>Trade</th><th>Symbol</th><th>Side</th><th>Setup</th><th>State</th><th>Opened</th><th>Closed</th><th>Net PnL</th><th>Reason</th></tr></thead><tbody>${tradeRows}</tbody></table>` : '<p class="muted">No trade rows surfaced by selected run payload.</p>'}
+    </article>
+    <article class="panel">
+      <header><h3>Evaluation / Prop Readiness</h3><p>Explicitly runtime-bound evaluation summary.</p></header>
+      <div class="diag-grid">${evaluationRows}</div>
+    </article>
+  </section>`;
+}
+
 function renderControlRail(path: string): string {
   if (path === '/backtest') {
+    const vm = createBacktestLabViewModel((globalThis as { __lastPagePayload?: unknown }).__lastPagePayload as Record<string, unknown> | undefined ?? { path });
     return `<section class="command-rail">
       <h3>Backtest Launch Rail</h3>
-      <form class="api-form inline" data-endpoint="/api/backtests" data-method="POST">
-        <input name="datasetId" placeholder="dataset-btc-1m" required />
-        <input name="profileCode" placeholder="PROP_HUNTER" required />
-        <input name="timeframe" placeholder="1m" required />
-        <input name="symbols" placeholder="BTCUSDT,EURUSD" required />
-        <input name="initialBalance" placeholder="10000" />
-        <input name="slippageBps" placeholder="5" />
-        <input name="commissionBps" placeholder="4" />
-        <button type="submit">Launch Backtest</button>
+      <p>Research launch workflow uses runtime-confirmed API fields only.</p>
+      <form class="api-form" data-endpoint="/api/backtests" data-method="POST">
+        <label>Dataset<input name="datasetId" placeholder="${escapeHtml(vm.launchDefaults.datasetPlaceholder)}" required /></label>
+        <label>Profile<input name="profileCode" placeholder="${escapeHtml(vm.launchDefaults.profilePlaceholder)}" required /></label>
+        <label>Timeframe<input name="timeframe" placeholder="${escapeHtml(vm.launchDefaults.timeframePlaceholder)}" required /></label>
+        <label>Symbols (comma-separated)<input name="symbols" placeholder="${escapeHtml(vm.launchDefaults.symbolsPlaceholder)}" required /></label>
+        <label>Initial Balance<input name="initialBalance" placeholder="${escapeHtml(vm.launchDefaults.initialBalancePlaceholder)}" /></label>
+        <label>Slippage Bps<input name="slippageBps" placeholder="${escapeHtml(vm.launchDefaults.slippageBpsPlaceholder)}" /></label>
+        <label>Commission Bps<input name="commissionBps" placeholder="${escapeHtml(vm.launchDefaults.commissionBpsPlaceholder)}" /></label>
+        <label>Max Concurrent Positions<input name="maxConcurrentPositions" placeholder="${escapeHtml(vm.launchDefaults.maxConcurrentPositionsPlaceholder)}" /></label>
+        <button type="submit">Launch Backtest Run</button>
       </form>
     </section>`;
   }
@@ -504,19 +616,7 @@ function renderPanels(page: FoundationPage): string {
   }
 
   if (page.path === '/backtest') {
-    const runs = sectionData(page, 'runs');
-    const items = Array.isArray(runs?.items) ? runs.items : [];
-
-    return `<section class="panel-grid two-col">
-      <article class="panel">
-        <header><h3>Run Analyzer</h3><p>Operational table with current summaries.</p></header>
-        ${renderTableFromRuns(items)}
-      </article>
-      <article class="panel">
-        <header><h3>Defaults + Notes</h3><p>Execution-safe guidance from current branch capabilities.</p></header>
-        ${page.sections.slice(1).map((s) => `<div class="divider"><h4>${escapeHtml(s.title)}</h4>${renderJsonBlock(s.data)}</div>`).join('')}
-      </article>
-    </section>`;
+    return renderBacktestLabPanels(page);
   }
 
   if (page.path === '/live') {
@@ -586,6 +686,8 @@ function renderPagePayload(path: string, payload: unknown): string {
   </body>
 </html>`;
   }
+
+  (globalThis as { __lastPagePayload?: unknown }).__lastPagePayload = page;
 
   const hero = page.path === '/replay'
     ? renderReplayHero(page)
@@ -670,6 +772,14 @@ function renderPagePayload(path: string, payload: unknown): string {
       .api-form { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; border:1px solid #253552; border-radius:10px; padding:.55rem; background:#0e1729; }
       .api-form.inline { border:none; padding:0; background:transparent; }
       .api-form label { width:100%; color:#afc0e2; font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; }
+      .command-context { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.6rem; margin:1rem 0; }
+      .command-context article,.metric-card{ background:#0b1426; border:1px solid #22324f; border-radius:10px; padding:.75rem; }
+      .metric-strip.research{ grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+      .metric-meta{ display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
+      .single-col{ grid-template-columns:1fr; }
+      .chart-wrap{ border:1px solid #22324f; background:#091325; border-radius:10px; padding:.65rem; margin-bottom:.75rem; }
+      .chart-sparkline{ width:100%; height:180px; display:block; }
+      .chart-label{ margin:.2rem 0 .5rem; color:#a7bbdc; font-size:.82rem; }
       input, select, button {
         background:#0a1222; color:#dbe8ff; border:1px solid #2d3f63; border-radius:8px; padding:.45rem .52rem; font:inherit; font-size:.84rem;
       }
@@ -805,7 +915,7 @@ function renderPagePayload(path: string, payload: unknown): string {
             payload.symbols = payload.symbols.split(',').map((item) => item.trim()).filter(Boolean);
           }
 
-          for (const key of ['steps', 'barIndex', 'timestamp', 'speed', 'replaySpeed', 'initialBalance', 'slippageBps', 'commissionBps']) {
+          for (const key of ['steps', 'barIndex', 'timestamp', 'speed', 'replaySpeed', 'initialBalance', 'slippageBps', 'commissionBps', 'maxConcurrentPositions']) {
             if (key in payload) {
               const parsed = asNumberIfFinite(payload[key]);
               if (parsed === undefined) {
