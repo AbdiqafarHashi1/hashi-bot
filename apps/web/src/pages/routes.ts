@@ -6,30 +6,30 @@ export async function getOverviewPageRoute() {
   return pagesService.getOverviewPage();
 }
 
-export function getReplayPageRoute() {
-  return pagesService.getReplayPage();
+export function getReplayPageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getReplayPage(query);
 }
 
-export function getBacktestPageRoute() {
-  return pagesService.getBacktestPage();
+export function getBacktestPageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getBacktestPage(query);
 }
 
-export async function getLivePageRoute() {
-  return pagesService.getLivePage();
+export async function getLivePageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getLivePage(query);
 }
 
 export async function getSettingsPageRoute() {
   return pagesService.getSettingsPage();
 }
 
-export function getRunsPageRoute() {
-  return pagesService.getRunsPage();
+export function getRunsPageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getRunsPage(query);
 }
 
-export function getTradesPageRoute() {
-  return pagesService.getTradesPage();
+export function getTradesPageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getTradesPage(query);
 }
 
-export async function getSafetyPageRoute() {
-  return pagesService.getSafetyPage();
+export async function getSafetyPageRoute(query: URLSearchParams = new URLSearchParams()) {
+  return pagesService.getSafetyPage(query);
 }

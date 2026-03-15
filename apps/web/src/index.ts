@@ -206,7 +206,7 @@ export async function getApiRoutePayload(path: string, method: 'GET' | 'POST' = 
   }
 }
 
-export async function getPagePayload(path: string) {
+export async function getPagePayload(path: string, query: URLSearchParams = new URLSearchParams()) {
   try {
     switch (path) {
       case '/':
@@ -214,17 +214,17 @@ export async function getPagePayload(path: string) {
       case '/signals':
         return getOverviewPageRoute();
       case '/runs':
-        return getRunsPageRoute();
+        return getRunsPageRoute(query);
       case '/trades':
-        return getTradesPageRoute();
+        return getTradesPageRoute(query);
       case '/replay':
-        return getReplayPageRoute();
+        return getReplayPageRoute(query);
       case '/backtest':
-        return getBacktestPageRoute();
+        return getBacktestPageRoute(query);
       case '/live':
-        return getLivePageRoute();
+        return getLivePageRoute(query);
       case '/safety':
-        return getSafetyPageRoute();
+        return getSafetyPageRoute(query);
       case '/settings':
         return getSettingsPageRoute();
       default:

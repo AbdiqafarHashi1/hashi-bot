@@ -10,6 +10,7 @@ import { DEFAULT_REGIME_THRESHOLDS } from '@hashi-bot/strategy';
 
 import { createSection } from '../components/foundation-sections.js';
 import type { FoundationPage, PlatformSummary } from '../pages/page-types.js';
+import { buildHref, normalizeMode, normalizeSafetyView, normalizeLiveSection } from '../pages/control-room-query-state.js';
 
 import { InstantBacktestService } from './instant-backtest.service.js';
 import { LiveStatusService } from './live-status.service.js';
@@ -114,10 +115,11 @@ export class FoundationPagesService {
     };
   }
 
-  getReplayPage(): FoundationPage {
+  getReplayPage(query: URLSearchParams = new URLSearchParams()): FoundationPage {
     const runs = this.replayApiService.listRuns({ limit: 100 });
     const datasets = this.queryService.getDatasets();
-    const latestRun = runs.runs[0];
+    const requestedRunId = query.get('runId')?.trim();
+    const latestRun = requestedRunId ? runs.runs.find((run) => run.runId === requestedRunId) ?? runs.runs[0] : runs.runs[0];
     const activeRun = latestRun ? this.replayApiService.getRun(latestRun.runId) : { status: 'not_found' as const, message: 'No replay run selected.' };
 
     return {
@@ -150,9 +152,10 @@ export class FoundationPagesService {
     };
   }
 
-  getBacktestPage(): FoundationPage {
+  getBacktestPage(query: URLSearchParams = new URLSearchParams()): FoundationPage {
     const runs = this.instantBacktestService.listRuns({ limit: 100 });
-    const latestRun = runs.runs[0];
+    const requestedRunId = query.get('runId')?.trim();
+    const latestRun = requestedRunId ? runs.runs.find((run) => run.runId === requestedRunId) ?? runs.runs[0] : runs.runs[0];
     const activeRun = latestRun ? this.instantBacktestService.getRun(latestRun.runId) : { status: 'not_found' as const, message: 'No backtest run selected.' };
     const launchConfig = this.queryService.getBacktestConfigs();
 
@@ -188,7 +191,7 @@ export class FoundationPagesService {
     };
   }
 
-  async getLivePage(): Promise<FoundationPage> {
+  async getLivePage(query: URLSearchParams = new URLSearchParams()): Promise<FoundationPage> {
     const [live, health, orders, positions, incidents, safety] = await Promise.all([
       this.liveStatusService.getLiveState(),
       this.liveStatusService.getHealth(),
@@ -197,6 +200,8 @@ export class FoundationPagesService {
       this.liveStatusService.getIncidents(),
       this.liveStatusService.getSafety()
     ]);
+
+    const sectionFocus = normalizeLiveSection(query.get('section')?.trim());
 
     return {
       path: '/live',
@@ -230,6 +235,11 @@ export class FoundationPagesService {
           rationale: 'Avoid fake control-plane behavior in web process; worker control path remains authoritative.',
           operatorAction: 'Use worker recovery workflow for actual cancel/flatten/disable-live execution.'
         }),
+        createSection('operator_context', 'Operator Context', 'Focused live section and cross-terminal operator context.', {
+          sectionFocus,
+          note: sectionFocus === 'summary' ? 'No section focus selected — showing full live console.' : `Focused section: ${sectionFocus}.`,
+          safetyIncidentsLink: buildHref('/safety', { view: 'incidents' })
+        }),
         createSection('path_notes', 'Venue Path Notes', 'Mock/CCXT/cTrader behavior notes and data-honesty reminders.', {
           notes: [
             ...live.notes,
@@ -242,11 +252,20 @@ export class FoundationPagesService {
     };
   }
 
-  getRunsPage(): FoundationPage {
-    const replayRuns = this.replayApiService.listRuns({ limit: 100 });
-    const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
-    const combinedRuns = [...replayRuns.runs, ...backtestRuns.runs]
+  getRunsPage(query: URLSearchParams = new URLSearchParams()): FoundationPage {
+    const replayRuns = this.replayApiService.listRuns({ limit: 200 });
+    const backtestRuns = this.instantBacktestService.listRuns({ limit: 200 });
+    const mode = normalizeMode(query.get('mode')?.trim());
+    const selectedRunId = query.get('runId')?.trim();
+
+    const combinedRuns = [
+      ...replayRuns.runs.map((run) => ({ ...run, mode: 'replay' as const })),
+      ...backtestRuns.runs.map((run) => ({ ...run, mode: 'backtest' as const })),
+    ]
+      .filter((run) => mode === 'all' ? true : run.mode === mode)
       .sort((a, b) => (b.completedAtTs ?? b.startedAtTs ?? 0) - (a.completedAtTs ?? a.startedAtTs ?? 0));
+
+    const selectedRun = selectedRunId ? combinedRuns.find((run) => run.runId === selectedRunId) : combinedRuns[0];
 
     return {
       path: '/runs',
@@ -254,12 +273,31 @@ export class FoundationPagesService {
       subtitle: 'Cross-mode run inventory and investigation dispatch for replay/backtest workflows.',
       readiness: 'phase5_ready',
       sections: [
+        createSection('query_state', 'Dispatch Query State', 'Mode/run filters for run dispatch workflow.', {
+          mode,
+          selectedRunId: selectedRun?.runId ?? null,
+          contextNote: selectedRun ? 'selected run from runs inventory' : 'no run selected — showing default inventory state',
+        }),
         createSection('replay_runs', 'Replay Runs', 'Replay run summaries and statuses.', replayRuns),
         createSection('backtest_runs', 'Backtest Runs', 'Backtest run summaries and statuses.', backtestRuns),
         createSection('run_inventory', 'Run Inventory', 'Cross-mode inventory sorted by latest surfaced completion/start time.', {
           status: 'ok',
           items: combinedRuns,
-          count: combinedRuns.length
+          count: combinedRuns.length,
+          mode,
+          selectedRunId: selectedRun?.runId ?? null,
+        }),
+        createSection('run_dispatch_actions', 'Run Dispatch Actions', 'Cross-terminal quick actions with preserved query context.', {
+          selectedRunId: selectedRun?.runId ?? null,
+          selectedMode: selectedRun?.mode ?? mode,
+          actions: selectedRun
+            ? [
+                { label: 'Review trades', href: buildHref('/trades', { mode: selectedRun.mode, runId: selectedRun.runId }) },
+                { label: 'Open replay', href: buildHref('/replay', { runId: selectedRun.mode === 'replay' ? selectedRun.runId : undefined }) },
+                { label: 'Open backtest', href: buildHref('/backtest', { runId: selectedRun.mode === 'backtest' ? selectedRun.runId : undefined }) },
+                { label: 'Investigate lifecycle', href: buildHref('/trades', { mode: selectedRun.mode, runId: selectedRun.runId }) },
+              ]
+            : [],
         }),
         createSection('run_api_paths', 'Run API Paths', 'Operator routes for run retrieval and control.', {
           replayList: '/api/replay',
@@ -272,13 +310,25 @@ export class FoundationPagesService {
     };
   }
 
-  getTradesPage(): FoundationPage {
-    const replayRuns = this.replayApiService.listRuns({ limit: 100 });
-    const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
-    const replayCandidates = replayRuns.runs.slice(0, 10);
-    const backtestCandidates = backtestRuns.runs.slice(0, 10);
-    const selectedReplayRunId = replayCandidates[0]?.runId;
-    const selectedBacktestRunId = backtestCandidates[0]?.runId;
+  getTradesPage(query: URLSearchParams = new URLSearchParams()): FoundationPage {
+    const replayRuns = this.replayApiService.listRuns({ limit: 200 });
+    const backtestRuns = this.instantBacktestService.listRuns({ limit: 200 });
+    const mode = normalizeMode(query.get('mode')?.trim());
+    const result = query.get('result')?.trim() ?? 'all';
+    const selectedRunId = query.get('runId')?.trim();
+    const selectedSource = query.get('source')?.trim();
+    const reason = query.get('reason')?.trim();
+
+    const replayCandidates = replayRuns.runs.slice(0, 50);
+    const backtestCandidates = backtestRuns.runs.slice(0, 50);
+    const runPool = [
+      ...(mode !== 'backtest' ? replayCandidates.map((run) => ({ run, mode: 'replay' as const })) : []),
+      ...(mode !== 'replay' ? backtestCandidates.map((run) => ({ run, mode: 'backtest' as const })) : []),
+    ];
+
+    const selectedCandidate = selectedRunId ? runPool.find((candidate) => candidate.run.runId === selectedRunId) : runPool[0];
+    const selectedReplayRunId = selectedCandidate?.mode === 'replay' ? selectedCandidate.run.runId : replayCandidates[0]?.runId;
+    const selectedBacktestRunId = selectedCandidate?.mode === 'backtest' ? selectedCandidate.run.runId : backtestCandidates[0]?.runId;
     const selectedReplayRun = selectedReplayRunId ? this.replayApiService.getRun(selectedReplayRunId) : { status: 'not_found', message: 'No replay run selected.' };
     const selectedBacktestRun = selectedBacktestRunId ? this.instantBacktestService.getRun(selectedBacktestRunId) : { status: 'not_found', message: 'No backtest run selected.' };
 
@@ -288,11 +338,22 @@ export class FoundationPagesService {
       subtitle: 'Forensic trade-outcome workspace spanning replay/backtest run records.',
       readiness: 'phase5_ready',
       sections: [
+        createSection('query_state', 'Operator Query State', 'Mode/result/run/source filters for review workflows.', {
+          mode,
+          result,
+          selectedRunId: selectedCandidate?.run.runId ?? null,
+          selectedSource,
+          reason: reason ?? null,
+          note: selectedCandidate ? 'selected run from runs inventory' : 'no run selected — showing default inventory state',
+        }),
         createSection('trade_sources', 'Trade Data Sources', 'Current run sources that expose trade summaries.', {
           replayRunsAvailable: replayRuns.runs.length,
           backtestRunsAvailable: backtestRuns.runs.length,
-          selectedSourceMode: backtestCandidates.length > 0 ? 'backtest' : replayCandidates.length > 0 ? 'replay' : 'none',
-          selectedRunId: selectedBacktestRunId ?? selectedReplayRunId ?? null,
+          selectedSourceMode: selectedCandidate?.mode ?? (backtestCandidates.length > 0 ? 'backtest' : replayCandidates.length > 0 ? 'replay' : 'none'),
+          selectedRunId: selectedCandidate?.run.runId ?? selectedBacktestRunId ?? selectedReplayRunId ?? null,
+          selectedSource,
+          result,
+          reason,
           replayDetailEndpointTemplate: '/api/replay/{runId}',
           backtestDetailEndpointTemplate: '/api/backtests/{runId}',
           note: 'Trade-level detail is available on run detail endpoints. Dedicated trade query APIs are a thin-glue follow-up.'
@@ -300,18 +361,28 @@ export class FoundationPagesService {
         createSection('replay_run_candidates', 'Replay Run Candidates', 'Replay runs to inspect for timeline/trade lifecycle review.', replayCandidates),
         createSection('backtest_run_candidates', 'Backtest Run Candidates', 'Backtest runs to inspect for deterministic trade outcomes.', backtestCandidates),
         createSection('selected_replay_run', 'Selected Replay Run Detail', 'Latest replay detail payload used for normalized trade review.', selectedReplayRun),
-        createSection('selected_backtest_run', 'Selected Backtest Run Detail', 'Latest backtest detail payload used for normalized trade review.', selectedBacktestRun)
+        createSection('selected_backtest_run', 'Selected Backtest Run Detail', 'Latest backtest detail payload used for normalized trade review.', selectedBacktestRun),
+        createSection('cross_navigation', 'Operator Workflow Links', 'Cross-page links preserving review context.', {
+          runs: buildHref('/runs', { mode, runId: selectedCandidate?.run.runId }),
+          replay: buildHref('/replay', { runId: selectedCandidate?.mode === 'replay' ? selectedCandidate.run.runId : undefined }),
+          backtest: buildHref('/backtest', { runId: selectedCandidate?.mode === 'backtest' ? selectedCandidate.run.runId : undefined }),
+          livePositions: buildHref('/live', { section: 'positions' }),
+          safetyIncidents: buildHref('/safety', { view: 'incidents' }),
+        })
       ]
     };
   }
 
-  async getSafetyPage(): Promise<FoundationPage> {
+
+  async getSafetyPage(query: URLSearchParams = new URLSearchParams()): Promise<FoundationPage> {
     const [live, health, incidents, safety] = await Promise.all([
       this.liveStatusService.getLiveState(),
       this.liveStatusService.getHealth(),
       this.liveStatusService.getIncidents(),
       this.liveStatusService.getSafety()
     ]);
+
+    const view = normalizeSafetyView(query.get('view')?.trim());
 
     return {
       path: '/safety',
@@ -329,6 +400,10 @@ export class FoundationPagesService {
         }),
         createSection('safety_health', 'Health Summary', 'Adapter health and incident counters.', health),
         createSection('safety_state', 'Safety State', 'Persisted runtime safety lockout/recovery state.', safety),
+        createSection('safety_query_context', 'Safety Query Context', 'Current safety view focus for operator workflows.', {
+          view,
+          note: view === 'summary' ? 'No safety focus selected — showing full incident command view.' : `reviewing ${view === 'incidents' ? 'incidents' : 'lockout'} view`,
+        }),
         createSection('incident_feed', 'Incident Feed', 'Latest incident feed and operational notes.', incidents),
         createSection('emergency_visibility', 'Emergency Controls (Visibility-Only)', 'Web endpoint remains visibility-only for safety.', {
           endpoint: 'POST /api/live/emergency',
