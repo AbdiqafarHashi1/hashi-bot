@@ -116,6 +116,31 @@ function safeNumber(value: unknown): string {
   return '—';
 }
 
+
+
+function safeCurrency(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return '—';
+}
+
+function safePercent(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `${value.toFixed(2)}%`;
+  }
+  return '—';
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function renderOverviewHero(page: FoundationPage): string {
   const capabilities = sectionData(page, 'capabilities');
   const liveExecution = capabilities && typeof capabilities.liveExecution === 'object' && capabilities.liveExecution !== null
@@ -250,40 +275,154 @@ function renderSafetyHero(page: FoundationPage): string {
   </section>`;
 }
 
-function renderControlRail(path: string): string {
-  if (path === '/replay') {
-    return `<section class="command-rail">
-      <h3>Replay Command Rail</h3>
-      <div class="actions-grid">
-        <form class="api-form" data-endpoint="/api/replay" data-method="POST">
-          <label>Create Run</label>
-          <input name="datasetId" placeholder="dataset-btc-1m" />
-          <input name="profileCode" placeholder="GROWTH_HUNTER" />
-          <input name="timeframe" placeholder="1m" />
-          <button type="submit">Create</button>
-        </form>
-        <form class="api-form" data-endpoint="/api/replay/{runId}/control" data-method="POST">
-          <label>Control Run</label>
-          <input name="runId" placeholder="run id" required />
-          <select name="type">
-            <option value="play">play</option>
-            <option value="pause">pause</option>
-            <option value="step">step</option>
-            <option value="jump_to_index">jump_to_index</option>
-            <option value="jump_to_timestamp">jump_to_timestamp</option>
-            <option value="set_speed">set_speed</option>
-            <option value="reset">reset</option>
-          </select>
-          <input name="steps" placeholder="steps" />
-          <input name="barIndex" placeholder="barIndex" />
-          <input name="timestamp" placeholder="timestamp" />
-          <input name="speed" placeholder="speed" />
-          <button type="submit">Send</button>
-        </form>
-      </div>
-    </section>`;
-  }
 
+function renderReplayCockpit(page: FoundationPage): string {
+  const runs = asRecord(sectionData(page, 'runs'));
+  const datasets = asRecord(sectionData(page, 'datasets'));
+  const activeRun = asRecord(sectionData(page, 'active_run'));
+  const runPayload = asRecord(activeRun?.run);
+  const replayState = asRecord(runPayload?.replayState);
+
+  const runItems = asArray(runs?.items).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const datasetItems = asArray(datasets?.datasets).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const openTrades = asArray(replayState?.openTrades).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const latestSignals = asArray(replayState?.latestSignals).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const timeline = asArray(runPayload?.timeline).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const tradeSummaries = asArray(runPayload?.tradeSummaries).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+
+  const active = runItems[0] ?? {};
+  const openPosition = openTrades[0];
+  const closedSummary = asRecord(replayState?.closedTradesSummary);
+
+  const latestTs = replayState?.cursor && typeof replayState.cursor === 'object' ? asRecord(replayState.cursor)?.timestamp : undefined;
+  const timelineTimes = timeline.map((event) => Number(event.ts)).filter((v) => Number.isFinite(v));
+  const minTs = timelineTimes.length > 0 ? Math.min(...timelineTimes) : undefined;
+  const maxTs = timelineTimes.length > 0 ? Math.max(...timelineTimes) : undefined;
+  const equity = Number(closedSummary?.netPnl ?? active.netPnl ?? 0);
+  const goalTarget = 500;
+  const goalProgress = Math.max(0, Math.min(100, (equity / goalTarget) * 100));
+  const maxEquity = Math.max(goalTarget, equity, 0);
+  const equityHeight = maxEquity > 0 ? Math.max(4, (equity / maxEquity) * 100) : 0;
+  const goalHeight = maxEquity > 0 ? (goalTarget / maxEquity) * 100 : 100;
+  const drawdownRiskPct = typeof active.maxDrawdownPct === 'number' ? active.maxDrawdownPct : undefined;
+
+  const timelineRows = timeline.slice(-12).reverse().map((event) => {
+    const eventType = String(event.type ?? 'event');
+    const when = typeof event.ts === 'number' ? new Date(event.ts).toISOString() : '—';
+    return `<li><span class="timeline-dot"></span><div><p class="timeline-title">${escapeHtml(eventType.replaceAll('_', ' '))}</p><p class="timeline-meta">${escapeHtml(when)} · bar ${escapeHtml(String(event.barIndex ?? '—'))}</p></div></li>`;
+  }).join('');
+
+  const signalRows = ['biasAlign', 'confirmationStrength', 'pullbackQuality', 'regimeDetection', 'decisionOutcome']
+    .map((key) => {
+      const signal = latestSignals[0];
+      const val = signal ? signal[key] : undefined;
+      const text = val === undefined ? 'unavailable' : String(val);
+      return `<div class="diag-row"><span>${escapeHtml(key)}</span><strong>${escapeHtml(text)}</strong></div>`;
+    }).join('');
+
+  const tradesRows = tradeSummaries
+    .map((trade) => {
+      const net = typeof trade.netPnl === 'number' ? trade.netPnl : undefined;
+      const result = net === undefined ? 'open' : net >= 0 ? 'win' : 'loss';
+      return `<tr>
+        <td>${escapeHtml(typeof trade.closedAtTs === 'number' ? new Date(trade.closedAtTs).toISOString() : typeof trade.openedAtTs === 'number' ? new Date(trade.openedAtTs).toISOString() : '—')}</td>
+        <td>${escapeHtml(String(trade.side ?? '—'))}</td>
+        <td class="num">${safeNumber(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position && asRecord(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position)?.qty)}</td>
+        <td class="num">${safeNumber(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position && asRecord(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position)?.entryPrice)}</td>
+        <td class="num">${safeNumber(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position && asRecord(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.position)?.closedAtTs)}</td>
+        <td class="num">${safeCurrency(trade.netPnl)}</td>
+        <td class="num">${safeCurrency(asRecord((openTrades.find((t) => t.tradeId === trade.tradeId) ?? {}))?.totalFees)}</td>
+        <td>${statusBadge(result)}</td>
+        <td>${escapeHtml(String(trade.closeReason ?? '—'))}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<section class="replay-cockpit">
+    <article class="panel command-center">
+      <header><h3>Replay Command Center</h3><p>Mission control rail for replay orchestration.</p></header>
+      <div class="rail-grid">
+        <label>Dataset<select name="datasetId" form="replay-create-form">${datasetItems.map((dataset) => `<option value="${escapeHtml(String(dataset.id ?? ''))}">${escapeHtml(String(dataset.name ?? dataset.id ?? 'dataset'))}</option>`).join('') || '<option value="">No datasets</option>'}</select></label>
+        <label>Symbol<select name="symbolCodes" form="replay-create-form">${datasetItems.map((dataset) => `<option value="${escapeHtml(String(dataset.symbolCode ?? ''))}">${escapeHtml(String(dataset.symbolCode ?? ''))}</option>`).join('') || '<option value="">—</option>'}</select></label>
+        <label>Timeframe<input name="timeframe" form="replay-create-form" value="${escapeHtml(String(active.timeframe ?? '1m'))}" /></label>
+        <label>Profile<input name="profileCode" form="replay-create-form" value="${escapeHtml(String(active.profileCode ?? 'GROWTH_HUNTER'))}" /></label>
+        <label>Clock<input value="${escapeHtml(typeof latestTs === 'number' ? new Date(latestTs).toISOString() : new Date().toISOString())}" readonly /></label>
+        <label>Replay Speed<input name="replaySpeed" form="replay-create-form" value="${escapeHtml(String(replayState?.playbackSpeed ?? 1))}" /></label>
+      </div>
+      <div class="rail-actions">
+        <form id="replay-create-form" class="api-form inline" data-endpoint="/api/replay" data-method="POST"><button type="submit">Start</button></form>
+        <form class="api-form inline" data-endpoint="/api/replay/{runId}/control" data-method="POST"><input type="hidden" name="runId" value="${escapeHtml(String(active.runId ?? ''))}" /><input type="hidden" name="type" value="pause" /><button type="submit">Pause</button></form>
+        <form class="api-form inline" data-endpoint="/api/replay/{runId}/control" data-method="POST"><input type="hidden" name="runId" value="${escapeHtml(String(active.runId ?? ''))}" /><input type="hidden" name="type" value="play" /><button type="submit">Resume</button></form>
+        <form class="api-form inline" data-endpoint="/api/replay/{runId}/control" data-method="POST"><input type="hidden" name="runId" value="${escapeHtml(String(active.runId ?? ''))}" /><input type="hidden" name="type" value="step" /><input type="hidden" name="steps" value="1" /><button type="submit">Step</button></form>
+        <form class="api-form inline" data-endpoint="/api/replay/{runId}/control" data-method="POST"><input type="hidden" name="runId" value="${escapeHtml(String(active.runId ?? ''))}" /><input type="hidden" name="type" value="reset" /><button type="submit">Reset</button></form>
+      </div>
+    </article>
+
+    <section class="metric-strip hero-metrics">
+      <article><p>Equity</p><h3>${safeCurrency(equity)}</h3></article>
+      <article><p>Realized PnL</p><h3>${safeCurrency(closedSummary?.netPnl)}</h3></article>
+      <article><p>Unrealized PnL</p><h3>${safeCurrency(asRecord(openPosition?.position)?.unrealizedPnl)}</h3></article>
+      <article><p>Drawdown</p><h3>${safePercent(drawdownRiskPct)}</h3></article>
+      <article><p>Goal Progress</p><h3>${safePercent(goalProgress)}</h3></article>
+      <article><p>Fees</p><h3>${safeCurrency(asArray(openTrades).reduce<number>((sum, trade) => sum + (typeof asRecord(trade)?.totalFees === 'number' ? Number(asRecord(trade)?.totalFees) : 0), 0))}</h3></article>
+    </section>
+
+    <section class="cockpit-grid">
+      <article class="panel equity-panel">
+        <header><h3>Equity Curve</h3><p>Live run equity vs target goal line.</p></header>
+        <div class="zoom-row"><button class="ghost" type="button">1x</button><button class="ghost" type="button">5x</button><button class="ghost" type="button">All</button></div>
+        <div class="equity-chart" role="img" aria-label="Equity curve chart">
+          <div class="axis y">PnL</div>
+          <div class="axis x">Time (${escapeHtml(minTs && maxTs ? `${new Date(minTs).toISOString()} → ${new Date(maxTs).toISOString()}` : 'unavailable')})</div>
+          <div class="equity-bar" style="height:${equityHeight}%"></div>
+          <div class="goal-line" style="bottom:${goalHeight}%">Goal</div>
+        </div>
+      </article>
+
+      <article class="panel reasoning-panel">
+        <header><h3>Signal / Reasoning</h3><p>Diagnostic frame from available runtime signal payloads.</p></header>
+        <div class="diag-grid">${signalRows}</div>
+      </article>
+
+      <aside class="side-stack">
+        <article class="panel">
+          <header><h3>Open Position Inspector</h3><p>Current open trade attributes.</p></header>
+          ${openPosition ? `<div class="position-grid">
+            <div><span>Symbol</span><strong>${escapeHtml(String(openPosition.symbolCode ?? '—'))}</strong></div>
+            <div><span>Side</span><strong>${statusBadge(String(openPosition.side ?? '—'))}</strong></div>
+            <div><span>Entry</span><strong>${safeNumber(asRecord(openPosition.position)?.entryPrice)}</strong></div>
+            <div><span>Stop</span><strong>${safeNumber(asRecord(openPosition.position)?.stopPrice)}</strong></div>
+            <div><span>Take Profit</span><strong>${safeNumber(asRecord(openPosition.position)?.tp1Price)}</strong></div>
+            <div><span>Quantity</span><strong>${safeNumber(asRecord(openPosition.position)?.qty)}</strong></div>
+            <div><span>Unrealized PnL</span><strong>${safeCurrency(asRecord(openPosition.position)?.unrealizedPnl)}</strong></div>
+          </div>` : '<p class="muted">No open position in the active replay state.</p>'}
+        </article>
+
+        <article class="panel timeline-panel">
+          <header><h3>Activity Timeline</h3><p>Recent runtime events.</p></header>
+          ${timelineRows ? `<ol class="timeline">${timelineRows}</ol>` : '<p class="muted">No timeline events available yet.</p>'}
+        </article>
+      </aside>
+    </section>
+
+    <article class="panel goal-panel">
+      <header><h3>Goal / Evaluation</h3><p>Target progression and drawdown risk posture.</p></header>
+      <div class="goal-grid">
+        <div><p>Progress toward target</p><h3>${safePercent(goalProgress)}</h3></div>
+        <div><p>Drawdown risk</p><h3>${safePercent(drawdownRiskPct)}</h3></div>
+        <div><p>Status</p><h3>${statusBadge(goalProgress >= 100 && (drawdownRiskPct ?? 0) < 10 ? 'pass' : 'in_progress')}</h3></div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <header><h3>Trade History</h3><p>Closed/open trade summaries from replay detail.</p></header>
+      <div class="trade-filters"><span>${statusBadge('all')}</span><span>${statusBadge('wins')}</span><span>${statusBadge('losses')}</span></div>
+      ${tradesRows ? `<table><thead><tr><th>Time</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Fees</th><th>Result</th><th>Reason</th></tr></thead><tbody>${tradesRows}</tbody></table>` : '<p class="muted">No trade history yet for this run.</p>'}
+    </article>
+  </section>`;
+}
+
+function renderControlRail(path: string): string {
   if (path === '/backtest') {
     return `<section class="command-rail">
       <h3>Backtest Launch Rail</h3>
@@ -360,17 +499,21 @@ function renderTableFromRuns(items: unknown[]): string {
 }
 
 function renderPanels(page: FoundationPage): string {
-  if (page.path === '/replay' || page.path === '/backtest') {
+  if (page.path === '/replay') {
+    return renderReplayCockpit(page);
+  }
+
+  if (page.path === '/backtest') {
     const runs = sectionData(page, 'runs');
     const items = Array.isArray(runs?.items) ? runs.items : [];
 
     return `<section class="panel-grid two-col">
       <article class="panel">
-        <header><h3>${escapeHtml(page.path === '/replay' ? 'Run Console' : 'Run Analyzer')}</h3><p>Operational table with current summaries.</p></header>
+        <header><h3>Run Analyzer</h3><p>Operational table with current summaries.</p></header>
         ${renderTableFromRuns(items)}
       </article>
       <article class="panel">
-        <header><h3>${escapeHtml(page.path === '/replay' ? 'Diagnostics + Notes' : 'Defaults + Notes')}</h3><p>Execution-safe guidance from current branch capabilities.</p></header>
+        <header><h3>Defaults + Notes</h3><p>Execution-safe guidance from current branch capabilities.</p></header>
         ${page.sections.slice(1).map((s) => `<div class="divider"><h4>${escapeHtml(s.title)}</h4>${renderJsonBlock(s.data)}</div>`).join('')}
       </article>
     </section>`;
@@ -560,6 +703,38 @@ function renderPagePayload(path: string, payload: unknown): string {
       th { color:#93abd5; text-transform:uppercase; letter-spacing:.06em; font-size:.72rem; background:#0a1426; position:sticky; top:0; }
       td.num { text-align:right; font-variant-numeric: tabular-nums; }
       .muted { color:#96a8cd; padding:.75rem .85rem; }
+
+      .replay-cockpit { display:grid; gap:.75rem; }
+      .command-center .rail-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.55rem; margin-top:.45rem; }
+      .command-center label { display:flex; flex-direction:column; gap:.3rem; color:#a9bcde; font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; }
+      .command-center .rail-actions { margin-top:.7rem; display:flex; flex-wrap:wrap; gap:.45rem; }
+      .hero-metrics .metric-value { font-size:1.3rem; }
+      .cockpit-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(280px,.9fr); gap:.75rem; align-items:start; }
+      .equity-panel .zoom-row { display:flex; gap:.4rem; padding: .65rem .85rem 0; }
+      button.ghost { background:#101b31; border-color:#2d4269; }
+      .equity-chart { position:relative; margin:.7rem .85rem .85rem; height:260px; border:1px solid #283a5c; border-radius:10px; background:linear-gradient(180deg,#091426,#0a1527); padding:1rem 1rem 2rem 2.1rem; }
+      .equity-chart .axis { position:absolute; color:#7f95be; font-size:.72rem; }
+      .equity-chart .axis.y { left:.5rem; top:1rem; writing-mode:vertical-rl; transform:rotate(180deg); }
+      .equity-chart .axis.x { left:2.1rem; bottom:.55rem; }
+      .equity-bar { position:absolute; left:3rem; right:2rem; bottom:2rem; background:linear-gradient(180deg, rgba(76,149,255,.82), rgba(48,108,203,.38)); border:1px solid #4d78bc; border-bottom:none; border-radius:8px 8px 0 0; min-height:2px; }
+      .goal-line { position:absolute; left:2.2rem; right:1rem; border-top:1px dashed #d6a95d; color:#e5be7a; font-size:.72rem; padding-top:.2rem; }
+      .diag-grid { padding:.65rem .85rem .85rem; display:grid; gap:.5rem; }
+      .diag-row { display:flex; justify-content:space-between; gap:.5rem; border-bottom:1px solid #1d2c47; padding-bottom:.34rem; }
+      .diag-row span { color:#9db0d4; text-transform:capitalize; }
+      .side-stack { display:grid; gap:.75rem; }
+      .position-grid { padding:.65rem .85rem .85rem; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem .8rem; }
+      .position-grid span { display:block; color:#8fa5cf; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+      .position-grid strong { font-size:.96rem; }
+      .timeline { list-style:none; margin:0; padding:.75rem .85rem .85rem; display:grid; gap:.6rem; }
+      .timeline li { display:grid; grid-template-columns:14px 1fr; gap:.5rem; align-items:start; }
+      .timeline-dot { width:10px; height:10px; border-radius:50%; margin-top:.28rem; background:#4d76bb; box-shadow:0 0 0 3px rgba(77,118,187,.2); }
+      .timeline-title { margin:0; text-transform:capitalize; }
+      .timeline-meta { margin:.18rem 0 0; color:#8da3cb; font-size:.76rem; }
+      .goal-grid { padding:.75rem .85rem .9rem; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.55rem; }
+      .goal-grid p { margin:0; color:#90a6ce; font-size:.76rem; text-transform:uppercase; letter-spacing:.06em; }
+      .goal-grid h3 { margin:.35rem 0 0; }
+      .trade-filters { padding:0 .85rem .55rem; display:flex; gap:.35rem; }
+
       .toast {
         position: fixed;
         right: 1rem;
@@ -572,6 +747,7 @@ function renderPagePayload(path: string, payload: unknown): string {
         min-width: 260px;
         display: none;
       }
+      @media (max-width: 1200px) { .cockpit-grid { grid-template-columns:1fr; } }
       @media (max-width: 900px) {
         .command-bar { grid-template-columns: 1fr; }
         .meta-row { flex-direction: column; align-items: flex-start; }
@@ -629,7 +805,7 @@ function renderPagePayload(path: string, payload: unknown): string {
             payload.symbols = payload.symbols.split(',').map((item) => item.trim()).filter(Boolean);
           }
 
-          for (const key of ['steps', 'barIndex', 'timestamp', 'speed', 'initialBalance', 'slippageBps', 'commissionBps']) {
+          for (const key of ['steps', 'barIndex', 'timestamp', 'speed', 'replaySpeed', 'initialBalance', 'slippageBps', 'commissionBps']) {
             if (key in payload) {
               const parsed = asNumberIfFinite(payload[key]);
               if (parsed === undefined) {

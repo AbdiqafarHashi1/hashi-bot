@@ -116,6 +116,9 @@ export class FoundationPagesService {
 
   getReplayPage(): FoundationPage {
     const runs = this.replayApiService.listRuns({ limit: 100 });
+    const datasets = this.queryService.getDatasets();
+    const latestRun = runs.runs[0];
+    const activeRun = latestRun ? this.replayApiService.getRun(latestRun.runId) : { status: 'not_found' as const, message: 'No replay run selected.' };
 
     return {
       path: '/replay',
@@ -129,6 +132,8 @@ export class FoundationPagesService {
           count: runs.runs.length,
           emptyStateMessage: runs.runs.length === 0 ? 'No replay runs found. Start with `pnpm smoke:replay` or POST /api/replay.' : undefined
         }),
+        createSection('datasets', 'Replay Datasets', 'Dataset inventory for replay command rail selectors.', datasets),
+        createSection('active_run', 'Active Run Detail', 'Latest replay run detail and timeline signals, when available.', activeRun),
         createSection('controls', 'Replay Control Endpoints', 'Route templates for route-level replay control workflows.', {
           controlEndpointTemplate: '/api/replay/{runId}/control',
           detailEndpointTemplate: '/api/replay/{runId}',
