@@ -1,7 +1,12 @@
 import { createServer } from 'node:http';
 
 import { getApiRoutePayload, getPagePayload } from './index.js';
-import { createBacktestLabViewModel, type BacktestLabViewModel } from './pages/control-room-view-models.js';
+import {
+  createBacktestLabViewModel,
+  createRunsIntelligenceViewModel,
+  createTradesReviewViewModel,
+  type BacktestLabViewModel,
+} from './pages/control-room-view-models.js';
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -247,28 +252,24 @@ function renderSettingsHero(page: FoundationPage): string {
 }
 
 function renderRunsHero(page: FoundationPage): string {
-  const replayRuns = sectionData(page, 'replay_runs');
-  const backtestRuns = sectionData(page, 'backtest_runs');
-  const replayItems = Array.isArray(replayRuns?.runs) ? replayRuns.runs : [];
-  const backtestItems = Array.isArray(backtestRuns?.runs) ? backtestRuns.runs : [];
-
+  const vm = createRunsIntelligenceViewModel(page as unknown as Record<string, unknown>);
   return `<section class="metric-strip">
-    <article><p>Replay Runs</p><h3>${safeNumber(replayItems.length)}</h3></article>
-    <article><p>Backtest Runs</p><h3>${safeNumber(backtestItems.length)}</h3></article>
-    <article><p>Replay API</p><h3>${statusBadge(String(replayRuns?.status ?? 'unknown'))}</h3></article>
-    <article><p>Backtest API</p><h3>${statusBadge(String(backtestRuns?.status ?? 'unknown'))}</h3></article>
-    <article><p>Page Scope</p><h3>Cross-Mode</h3></article>
+    <article><p>Replay Runs</p><h3>${escapeHtml(vm.context.replayRunCount)}</h3></article>
+    <article><p>Backtest Runs</p><h3>${escapeHtml(vm.context.backtestRunCount)}</h3></article>
+    <article><p>Total Surfaced</p><h3>${escapeHtml(vm.context.totalRuns)}</h3></article>
+    <article><p>Latest Run Timestamp</p><h3>${escapeHtml(vm.context.latestRunTs)}</h3></article>
+    <article><p>Page Status</p><h3>${statusBadge(vm.context.status)}</h3></article>
   </section>`;
 }
 
 function renderTradesHero(page: FoundationPage): string {
-  const sources = sectionData(page, 'trade_sources');
+  const vm = createTradesReviewViewModel(page as unknown as Record<string, unknown>);
   return `<section class="metric-strip">
-    <article><p>Replay Sources</p><h3>${safeNumber(sources?.replayRunsAvailable)}</h3></article>
-    <article><p>Backtest Sources</p><h3>${safeNumber(sources?.backtestRunsAvailable)}</h3></article>
-    <article><p>Replay Detail</p><h3>${escapeHtml(String(sources?.replayDetailEndpointTemplate ?? '/api/replay/{runId}'))}</h3></article>
-    <article><p>Backtest Detail</p><h3>${escapeHtml(String(sources?.backtestDetailEndpointTemplate ?? '/api/backtests/{runId}'))}</h3></article>
-    <article><p>Status</p><h3>${statusBadge('review_ready')}</h3></article>
+    <article><p>Replay Sources</p><h3>${escapeHtml(vm.context.replaySources)}</h3></article>
+    <article><p>Backtest Sources</p><h3>${escapeHtml(vm.context.backtestSources)}</h3></article>
+    <article><p>Selected Source</p><h3>${escapeHtml(vm.context.selectedSourceMode)}</h3></article>
+    <article><p>Selected Run</p><h3>${escapeHtml(vm.context.selectedRunId)}</h3></article>
+    <article><p>Review Status</p><h3>${statusBadge(vm.context.reviewStatus)}</h3></article>
   </section>`;
 }
 
@@ -636,25 +637,102 @@ function renderPanels(page: FoundationPage): string {
   }
 
   if (page.path === '/runs') {
-    const replayRuns = sectionData(page, 'replay_runs');
-    const backtestRuns = sectionData(page, 'backtest_runs');
-    const replayItems = Array.isArray(replayRuns?.runs) ? replayRuns.runs : [];
-    const backtestItems = Array.isArray(backtestRuns?.runs) ? backtestRuns.runs : [];
-    return `<section class="panel-grid two-col">
+    const vm = createRunsIntelligenceViewModel(page as unknown as Record<string, unknown>);
+    const metricCards = vm.metrics.map((metric) => `<article class="metric-card"><p>${escapeHtml(metric.label)}</p><h3>${escapeHtml(metric.value)}</h3><div class="metric-meta">${statusBadge(metric.availability.status)}</div></article>`).join('');
+    const rows = vm.inventoryRows.slice(0, 300).map((row) => `<tr>
+      <td>${escapeHtml(row.runId)}</td>
+      <td>${statusBadge(row.mode)}</td>
+      <td>${escapeHtml(row.dataset)}</td>
+      <td>${escapeHtml(row.profile)}</td>
+      <td>${escapeHtml(row.timeframe)}</td>
+      <td>${escapeHtml(row.symbols)}</td>
+      <td>${statusBadge(row.status)}</td>
+      <td>${escapeHtml(row.createdAt)}</td>
+      <td>${escapeHtml(row.completedAt)}</td>
+      <td class="num">${escapeHtml(row.totalTrades)}</td>
+      <td class="num">${escapeHtml(row.netPnl)}</td>
+      <td class="num">${escapeHtml(row.winRate)}</td>
+      <td>${row.quickActions.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</td>
+    </tr>`).join('');
+
+    return `<section class="metric-strip research">${metricCards}</section>
+    <section class="panel-grid single-col">
       <article class="panel">
-        <header><h3>Replay Run Inventory</h3><p>Recent replay run summaries.</p></header>
-        ${renderTableFromRuns(replayItems)}
-      </article>
-      <article class="panel">
-        <header><h3>Backtest Run Inventory</h3><p>Recent backtest run summaries.</p></header>
-        ${renderTableFromRuns(backtestItems)}
+        <header><h3>Run Inventory Table</h3><p>Cross-mode run table normalized for replay/backtest comparison.</p></header>
+        ${rows ? `<table><thead><tr><th>Run ID</th><th>Mode</th><th>Dataset</th><th>Profile</th><th>TF</th><th>Symbols</th><th>Status</th><th>Created</th><th>Completed</th><th>Trades</th><th>Net PnL</th><th>Win Rate</th><th>Quick Actions</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No run inventory rows surfaced.</p>'}
       </article>
     </section>
-    <section class="panel-grid two-col">${page.sections.slice(2).map((section) => `<article class="panel"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
+    <section class="panel-grid two-col">
+      <article class="panel"><header><h3>Run Comparison</h3><p>Best/worst and latest surfaced run references.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Best Run</span><strong>${escapeHtml(vm.comparison.bestRun)}</strong></div>
+        <div class="diag-row"><span>Worst Run</span><strong>${escapeHtml(vm.comparison.worstRun)}</strong></div>
+        <div class="diag-row"><span>Highest Win Rate</span><strong>${escapeHtml(vm.comparison.highestWinRate)}</strong></div>
+        <div class="diag-row"><span>Highest Trade Count</span><strong>${escapeHtml(vm.comparison.highestTradeCount)}</strong></div>
+        <div class="diag-row"><span>Latest Completed</span><strong>${escapeHtml(vm.comparison.latestCompletedRun)}</strong></div>
+        <div class="diag-row"><span>Latest Replay</span><strong>${escapeHtml(vm.comparison.latestReplayRun)}</strong></div>
+        <div class="diag-row"><span>Latest Backtest</span><strong>${escapeHtml(vm.comparison.latestBacktestRun)}</strong></div>
+      </div></article>
+      <article class="panel"><header><h3>Run Health / Completion</h3><p>Completion mix and dispatch guidance.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Completed vs Pending</span><strong>${escapeHtml(vm.healthPanel.completedVsPending)}</strong></div>
+        <div class="diag-row"><span>Replay vs Backtest</span><strong>${escapeHtml(vm.healthPanel.replayVsBacktest)}</strong></div>
+        <div class="diag-row"><span>Guidance</span><strong>${escapeHtml(vm.healthPanel.emptyGuidance)}</strong></div>
+        ${vm.healthPanel.operatorNotes.map((note) => `<p class="muted">• ${escapeHtml(note)}</p>`).join('')}
+        <div class="diag-row"><span>Cross Navigation</span><strong>${vm.crossNavigation.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
+      </div></article>
+    </section>`;
   }
 
   if (page.path === '/trades') {
-    return `<section class="panel-grid two-col">${page.sections.map((section) => `<article class="panel"><header><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.description)}</p></header>${renderJsonBlock(section.data)}</article>`).join('')}</section>`;
+    const vm = createTradesReviewViewModel(page as unknown as Record<string, unknown>);
+    const metricCards = Object.values(vm.metrics).map((metric) => `<article class="metric-card"><p>${escapeHtml(metric.label)}</p><h3>${escapeHtml(metric.value)}</h3><div class="metric-meta">${statusBadge(metric.availability.status)} ${metric.availability.reason ? `<span class="muted">${escapeHtml(metric.availability.reason)}</span>` : ''}</div></article>`).join('');
+    const tradeRows = vm.tradeRows.slice(0, 400).map((row) => `<tr>
+      <td>${statusBadge(row.result.label)}</td><td>${escapeHtml(row.side)}</td><td>${escapeHtml(row.symbol)}</td>
+      <td class="num">${escapeHtml(row.qty)}</td><td class="num">${escapeHtml(row.entry)}</td><td class="num">${escapeHtml(row.exit)}</td>
+      <td class="num">${escapeHtml(row.tpSl)}</td><td class="num">${escapeHtml(row.pnlNet)}</td><td class="num">${escapeHtml(row.fees)}</td>
+      <td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.opened)}</td><td>${escapeHtml(row.closed)}</td><td>${escapeHtml(row.sourceMode)}:${escapeHtml(row.sourceRun)}</td>
+      <td>${row.quickActions.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</td>
+    </tr>`).join('');
+
+    return `<section class="metric-strip research">${metricCards}</section>
+    <section class="panel-grid two-col">
+      <article class="panel"><header><h3>Source Selection / Investigation Rail</h3><p>Choose source type and pivot into run detail/replay/backtest workflows.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Selected Source Mode</span><strong>${escapeHtml(vm.context.selectedSourceMode)}</strong></div>
+        <div class="diag-row"><span>Selected Run ID</span><strong>${escapeHtml(vm.context.selectedRunId)}</strong></div>
+        <div class="diag-row"><span>Detail Endpoint</span><strong>${escapeHtml(vm.context.selectedDetailEndpoint)}</strong></div>
+        <div class="diag-row"><span>Result Filters</span><strong>${vm.investigationRail.filters.map((f) => escapeHtml(f)).join(' · ')}</strong></div>
+        <div class="diag-row"><span>Reason Filter</span><strong>${statusBadge(vm.investigationRail.reasonFilterAvailability.status)} ${escapeHtml(vm.investigationRail.reasonFilterAvailability.reason ?? '')}</strong></div>
+        <div class="diag-row"><span>Bridge Links</span><strong>${vm.investigationRail.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
+      </div></article>
+      <article class="panel"><header><h3>Outcome / Distribution</h3><p>Wins/losses and reason frequency summary from surfaced trade rows.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Wins / Losses</span><strong>${escapeHtml(vm.outcome.winsVsLosses)}</strong></div>
+        <div class="diag-row"><span>Avg Win</span><strong>${escapeHtml(vm.outcome.avgWin)}</strong></div>
+        <div class="diag-row"><span>Avg Loss</span><strong>${escapeHtml(vm.outcome.avgLoss)}</strong></div>
+        <div class="diag-row"><span>PnL Range</span><strong>${escapeHtml(vm.outcome.pnlRange)}</strong></div>
+        <div class="diag-row"><span>Reason Frequency</span><strong>${escapeHtml(vm.outcome.reasonFrequency)}</strong></div>
+        <div class="diag-row"><span>Exit Reason Summary</span><strong>${escapeHtml(vm.outcome.exitReasonSummary)}</strong></div>
+      </div></article>
+    </section>
+    <section class="panel-grid single-col"><article class="panel"><header><h3>Trade Investigation Table</h3><p>Normalized cross-source rows prepared for future pagination/virtualization.</p></header>
+      ${tradeRows ? `<table><thead><tr><th>Result</th><th>Side</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Exit</th><th>TP/SL</th><th>PnL Net</th><th>Fees</th><th>Reason</th><th>Opened</th><th>Closed</th><th>Source Run</th><th>Quick Actions</th></tr></thead><tbody>${tradeRows}</tbody></table>` : '<p class="muted">No trade rows surfaced from selected replay/backtest run details.</p>'}
+    </article></section>
+    <section class="panel-grid two-col">
+      <article class="panel"><header><h3>Trade Inspector</h3><p>Selected/default trade lifecycle detail bridge.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Symbol / Side</span><strong>${escapeHtml(vm.inspector.symbol)} · ${escapeHtml(vm.inspector.side)}</strong></div>
+        <div class="diag-row"><span>Entry / Exit</span><strong>${escapeHtml(vm.inspector.entry)} / ${escapeHtml(vm.inspector.exit)}</strong></div>
+        <div class="diag-row"><span>PnL / Fees</span><strong>${escapeHtml(vm.inspector.pnl)} / ${escapeHtml(vm.inspector.fees)}</strong></div>
+        <div class="diag-row"><span>Reason / Result</span><strong>${escapeHtml(vm.inspector.reason)} / ${statusBadge(vm.inspector.result.label)}</strong></div>
+        <div class="diag-row"><span>Lifecycle</span><strong>${escapeHtml(vm.inspector.lifecycle)}</strong></div>
+        <div class="diag-row"><span>Run Source</span><strong>${escapeHtml(vm.inspector.runSource)}</strong></div>
+        <div class="diag-row"><span>Timestamps</span><strong>${escapeHtml(vm.inspector.opened)} → ${escapeHtml(vm.inspector.closed)}</strong></div>
+        <div class="diag-row"><span>TP / SL</span><strong>${escapeHtml(vm.inspector.tpSl)}</strong></div>
+        <div class="diag-row"><span>Bridge Links</span><strong>${vm.inspector.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
+      </div></article>
+      <article class="panel"><header><h3>Timeline / Lifecycle Bridge</h3><p>Workflow bridge to replay/backtest/run detail debugging.</p></header><div class="diag-grid">
+        <div class="diag-row"><span>Workflow</span><strong>${escapeHtml(vm.timelineBridge.title)}</strong></div>
+        ${vm.timelineBridge.notes.map((note) => `<p class="muted">• ${escapeHtml(note)}</p>`).join('')}
+        <div class="diag-row"><span>Links</span><strong>${vm.timelineBridge.links.map((link) => `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`).join(' · ')}</strong></div>
+      </div></article>
+    </section>`;
   }
 
   if (page.path === '/safety') {
