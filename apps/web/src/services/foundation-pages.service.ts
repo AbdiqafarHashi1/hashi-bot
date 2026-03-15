@@ -245,15 +245,22 @@ export class FoundationPagesService {
   getRunsPage(): FoundationPage {
     const replayRuns = this.replayApiService.listRuns({ limit: 100 });
     const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
+    const combinedRuns = [...replayRuns.runs, ...backtestRuns.runs]
+      .sort((a, b) => (b.completedAtTs ?? b.startedAtTs ?? 0) - (a.completedAtTs ?? a.startedAtTs ?? 0));
 
     return {
       path: '/runs',
-      title: 'Runs Review Console',
-      subtitle: 'Cross-mode run visibility for replay and instant backtest workflows.',
+      title: 'Runs Intelligence Console',
+      subtitle: 'Cross-mode run inventory and investigation dispatch for replay/backtest workflows.',
       readiness: 'phase5_ready',
       sections: [
         createSection('replay_runs', 'Replay Runs', 'Replay run summaries and statuses.', replayRuns),
         createSection('backtest_runs', 'Backtest Runs', 'Backtest run summaries and statuses.', backtestRuns),
+        createSection('run_inventory', 'Run Inventory', 'Cross-mode inventory sorted by latest surfaced completion/start time.', {
+          status: 'ok',
+          items: combinedRuns,
+          count: combinedRuns.length
+        }),
         createSection('run_api_paths', 'Run API Paths', 'Operator routes for run retrieval and control.', {
           replayList: '/api/replay',
           replayDetailTemplate: '/api/replay/{runId}',
@@ -270,22 +277,30 @@ export class FoundationPagesService {
     const backtestRuns = this.instantBacktestService.listRuns({ limit: 100 });
     const replayCandidates = replayRuns.runs.slice(0, 10);
     const backtestCandidates = backtestRuns.runs.slice(0, 10);
+    const selectedReplayRunId = replayCandidates[0]?.runId;
+    const selectedBacktestRunId = backtestCandidates[0]?.runId;
+    const selectedReplayRun = selectedReplayRunId ? this.replayApiService.getRun(selectedReplayRunId) : { status: 'not_found', message: 'No replay run selected.' };
+    const selectedBacktestRun = selectedBacktestRunId ? this.instantBacktestService.getRun(selectedBacktestRunId) : { status: 'not_found', message: 'No backtest run selected.' };
 
     return {
       path: '/trades',
       title: 'Trades Review',
-      subtitle: 'Trade outcome review surface from replay/backtest run records.',
+      subtitle: 'Forensic trade-outcome workspace spanning replay/backtest run records.',
       readiness: 'phase5_ready',
       sections: [
         createSection('trade_sources', 'Trade Data Sources', 'Current run sources that expose trade summaries.', {
           replayRunsAvailable: replayRuns.runs.length,
           backtestRunsAvailable: backtestRuns.runs.length,
+          selectedSourceMode: backtestCandidates.length > 0 ? 'backtest' : replayCandidates.length > 0 ? 'replay' : 'none',
+          selectedRunId: selectedBacktestRunId ?? selectedReplayRunId ?? null,
           replayDetailEndpointTemplate: '/api/replay/{runId}',
           backtestDetailEndpointTemplate: '/api/backtests/{runId}',
           note: 'Trade-level detail is available on run detail endpoints. Dedicated trade query APIs are a thin-glue follow-up.'
         }),
         createSection('replay_run_candidates', 'Replay Run Candidates', 'Replay runs to inspect for timeline/trade lifecycle review.', replayCandidates),
-        createSection('backtest_run_candidates', 'Backtest Run Candidates', 'Backtest runs to inspect for deterministic trade outcomes.', backtestCandidates)
+        createSection('backtest_run_candidates', 'Backtest Run Candidates', 'Backtest runs to inspect for deterministic trade outcomes.', backtestCandidates),
+        createSection('selected_replay_run', 'Selected Replay Run Detail', 'Latest replay detail payload used for normalized trade review.', selectedReplayRun),
+        createSection('selected_backtest_run', 'Selected Backtest Run Detail', 'Latest backtest detail payload used for normalized trade review.', selectedBacktestRun)
       ]
     };
   }
